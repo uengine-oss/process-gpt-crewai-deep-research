@@ -252,13 +252,13 @@ async def process_completed_task(bundle: Dict):
     row, conn, cur = bundle['row'], bundle['connection'], bundle['cursor']
 
     try:
-        logger.info(f"🔍 피드백 분석: {row['id']}")
+        print(f"🔍 피드백 분석: {row['id']}")
         
         draft_value = row.get('draft')
         output_value = row.get('output')
         
         if not (draft_value and output_value):
-            logger.warning(f"⚠️ draft 또는 output 없음: {row['id']}")
+            print(f"⚠️ draft 또는 output 없음")
             return
         
         # 변경사항 분석
@@ -269,7 +269,7 @@ async def process_completed_task(bundle: Dict):
                    (json.dumps(feedback_list, ensure_ascii=False), row['id']))
         conn.commit()
         
-        logger.info(f"✅ 피드백 저장 완료: {row['id']} ({len(feedback_list)}개)")
+        print(f"✅ 피드백 저장: {len(feedback_list)}개")
 
     except Exception as e:
         logger.error(f"❌ 피드백 처리 오류 {row['id']}: {e}")
@@ -288,22 +288,21 @@ async def _analyze_changes(draft_value: Any, output_value: Any, row: Dict) -> Li
             json.dumps(output_value) if isinstance(output_value, dict) else str(output_value)
         )
         
-        if not diff_result.get('unified_diff'):
-            logger.info("📝 변경사항 없음")
+        if not diff_result.get('unified_diff') or not diff_result.get('comparisons'):
+            print("📝 변경사항 없음")
             return []
         
-        # 변경사항 로깅
-        extract_changes(
-            diff_result.get('draft_content', ''), 
-            diff_result.get('output_content', '')
-        )
+        # 변경사항 요약
+        total_insertions = sum(len(c.get('changes', {}).get('insertions', [])) for c in diff_result.get('comparisons', []))
+        total_deletions = sum(len(c.get('changes', {}).get('deletions', [])) for c in diff_result.get('comparisons', []))
+        print(f"📝 변경사항: +{total_insertions}개 추가, -{total_deletions}개 삭제")
 
-        # 에이전트 피드백 생성
+        # 에이전트 피드백 생성 (이미 분석된 결과 전달)
         analyzer = AgentFeedbackAnalyzer()
         
-        feedback_list = await analyzer.analyze_diff_and_generate_feedback(
-            json.dumps(draft_value) if isinstance(draft_value, dict) else str(draft_value),
-            json.dumps(output_value) if isinstance(output_value, dict) else str(output_value),
+        feedback_list = await analyzer.generate_feedback_from_diff_result(
+            diff_result=diff_result,
+            original_content=json.dumps(draft_value) if isinstance(draft_value, dict) else str(draft_value),
             todo_id=row.get('id'),
             proc_inst_id=row.get('proc_inst_id')
         )
@@ -311,7 +310,7 @@ async def _analyze_changes(draft_value: Any, output_value: Any, row: Dict) -> Li
         return feedback_list or []
         
     except Exception as e:
-        logger.error(f"❌ 변경사항 분석 오류: {e}")
+        print(f"❌ 변경사항 분석 오류: {e}")
         return []
 
 

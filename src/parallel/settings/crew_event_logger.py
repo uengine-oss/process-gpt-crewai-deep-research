@@ -117,6 +117,7 @@ class CrewAIEventLogger:
                         return str(obj)
                 
                 serializable_record = json.loads(json.dumps(event_record, default=safe_serialize))
+                print("serializable_record: ", json.dumps(serializable_record, ensure_ascii=False, indent=2))
                 self.supabase_client.table("events").insert(serializable_record).execute()
             except Exception as e:
                 logger.error(f"❌ Supabase 저장 실패: {e}")
@@ -157,6 +158,9 @@ class CrewAIEventLogger:
                         safe_data[key] = str(value)
                     else:
                         safe_data[key] = value
+
+                    print("safe_data: ", json.dumps(safe_data, ensure_ascii=False, indent=2))
+
                 except Exception as e:
                     logger.warning(f"Data 직렬화 실패 ({key}): {e}")
                     safe_data[key] = f"[직렬화 실패: {type(value).__name__}]"
@@ -184,18 +188,21 @@ class CrewAIEventLogger:
             logger.error(f"❌ 이벤트 처리 실패 ({getattr(event_obj, 'type', 'unknown')}): {e}")
 
     # === Custom Event Emission ===
-    def emit_event(self, event_type: str, data: Dict[str, Any], job_id: str = None) -> None:
+    def emit_event(self, event_type: str, data: Dict[str, Any], job_id: str = None, crew_type: str = None, todo_id: str = None, proc_inst_id: str = None) -> None:
         """
         커스텀 이벤트 발행 (모든 event_type에 재사용)
         Args:
             event_type: 이벤트 타입 (e.g. 'task_started')
             data: 이벤트 데이터 사전
             job_id: 작업 식별자, 기본값은 event_type
+            crew_type: 크루 타입, 기본값은 ContextVar에서 가져옴
+            todo_id: 투두 ID, 기본값은 ContextVar에서 가져옴
+            proc_inst_id: 프로세스 인스턴스 ID, 기본값은 ContextVar에서 가져옴
         """
-        # ContextVar에서 크루 컨텍스트 가져오기
-        crew_type = crew_type_var.get()
-        todo_id = todo_id_var.get()
-        proc_inst_id = proc_id_var.get()
+        # ContextVar에서 크루 컨텍스트 가져오기 (인자가 없을 경우)
+        crew_type = crew_type or crew_type_var.get()
+        todo_id = todo_id or todo_id_var.get()
+        proc_inst_id = proc_inst_id or proc_id_var.get()
         record = {
             'id': str(uuid.uuid4()),
             'job_id': job_id,

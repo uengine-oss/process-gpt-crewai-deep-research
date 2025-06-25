@@ -4,6 +4,7 @@ from crewai.flow.flow import Flow, listen, start
 from pydantic import BaseModel, Field
 from ..settings.crew_config_manager import CrewConfigManager
 from ..crews.report_crew.DynamicReportCrew import DynamicReportCrew
+from ..settings.crew_event_logger import CrewAIEventLogger
 import traceback
 import asyncio
 import re
@@ -58,6 +59,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         # Flow 기본 생성자 호출
         super().__init__()
         self.cm = CrewConfigManager()
+        self.event_logger = CrewAIEventLogger()
 
     @start()
     # create_execution_plan: AI를 이용해 실행 계획 생성 (-> ExecutionPlan 저장)
@@ -121,9 +123,37 @@ class MultiFormatFlow(Flow[MultiFormatState]):
                         self.state.section_contents[report_key][title] = f"Error: {res}"
                     else:
                         self.state.section_contents[report_key][title] = res
-                # 3) 섹션 결과 병합
+                
+                # 3) 섹션 병합 작업 시작 이벤트 발행
+                self.event_logger.emit_event(
+                    event_type="task_started",
+                    data={
+                        "role": "리포트 통합 전문가",
+                        "goal": f"리포트의 각 섹션을 하나의 완전한 문서로 병합하여 일관성 있는 최종 리포트를 생성합니다.",
+                        "agent_profile": ""
+                    },
+                    job_id=f"merge-{report_key}",
+                    crew_type="report",
+                    todo_id=self.state.todo_id,
+                    proc_inst_id=self.state.proc_inst_id
+                )
+                
+                # 섹션 결과 병합
                 merged_report = "\n\n---\n\n".join(self.state.section_contents[report_key].values())
                 self.state.report_contents[report_key] = merged_report
+                
+                # 섹션 병합 작업 완료 이벤트 발행
+                self.event_logger.emit_event(
+                    event_type="task_completed",
+                    data={
+                        "final_result": merged_report
+                    },
+                    job_id=f"merge-{report_key}",
+                    crew_type="report",
+                    todo_id=self.state.todo_id,
+                    proc_inst_id=self.state.proc_inst_id
+                )
+                
         except Exception as e:
             print(f"❌ [Error][generate_and_merge_report_sections] {e}")
             print(traceback.format_exc())

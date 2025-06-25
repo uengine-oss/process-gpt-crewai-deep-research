@@ -22,6 +22,7 @@ dependencies = [
     "pydantic>=2.6.0",         # 데이터 검증
     "firebase-admin>=6.4.0",   # Firebase
     "pytz>=2024.1",           # 시간대 처리
+    "diff-match-patch>=20230430",  # 정확한 텍스트 diff 처리
 ]
 
 [project.scripts]
