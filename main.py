@@ -1,8 +1,23 @@
 # -*- coding: utf-8 -*-
 import sys
 import io
+import warnings
+import builtins
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+# 전역 print 함수 오버라이드 (가장 먼저 적용)
+_orig_print = builtins.print
+def print(*args, **kwargs):
+    # 기본적으로 flush=True 적용
+    if 'flush' not in kwargs:
+        kwargs['flush'] = True
+    _orig_print(*args, **kwargs)
+builtins.print = print
+
+# 특정 경고 메시지 필터링
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="qdrant_client.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="websockets.*")
 
 import os
 import asyncio
@@ -14,19 +29,28 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
-# 환경에 따른 캐시 디렉토리 설정
-CACHE_DIR = "/data" if os.path.exists("/.dockerenv") else "."
-os.makedirs(CACHE_DIR, exist_ok=True)
-
-from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from router import add_routes_to_app
+from src.parallel.polling_manager import start_todolist_polling, start_feedback_polling, initialize_connections
+
+# 백그라운드 태스크 관리를 위한 lifespan 함수
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 시작 시 실행
+    initialize_connections()
+    # 통합 polling 태스크 시작
+    asyncio.create_task(start_todolist_polling(interval=7))  # TodoList 폴링
+    asyncio.create_task(start_feedback_polling(interval=15))  # 피드백 폴링
+    yield
+    # 종료 시 실행 (필요한 경우 cleanup 로직 추가)
 
 app = FastAPI(
     title="AgentMonitoring Server",
     version="1.0",
     description="Agent Monitoring API Server",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -40,17 +64,11 @@ app.add_middleware(
 # 라우터 추가
 add_routes_to_app(app)
 
-# polling 시작
-from src.parallel.todolist_poller import todolist_polling_task
-from src.parallel.feedback_poller import feedback_polling_loop
-
-@app.on_event("startup")
-async def start_background_tasks():
-    # todolist 폴링 태스크 시작
-    asyncio.create_task(todolist_polling_task())
-    # feedback polling을 백그라운드에서 계속 실행
-    asyncio.create_task(feedback_polling_loop(poll_interval=15))  # 10초마다 polling
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=int(os.environ.get("PORT", 8000)),
+        ws="none"
+    )

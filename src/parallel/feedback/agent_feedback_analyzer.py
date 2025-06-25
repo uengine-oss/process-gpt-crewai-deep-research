@@ -6,10 +6,10 @@ from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from dataclasses import dataclass
 
-from .agents_repository import AgentsRepository
+from ..agents_repository import AgentsRepository
 from .diff_util import compare_report_changes, extract_changes
-from .knowledge_manager import Mem0Tool
-from .event_logging.crew_event_logger import CrewAIEventLogger
+from ..tools.knowledge_manager import Mem0Tool
+from ..settings.crew_event_logger import CrewAIEventLogger
 
 # 로거 설정
 logger = logging.getLogger("agent_feedback_analyzer")
@@ -75,13 +75,6 @@ class AgentFeedbackAnalyzer:
                 diff_result.get('output_content', '')
             )
             
-            # 4. 피드백 생성 전 이벤트 기록 (한 번만, 빈 데이터)
-            self.event_logger.emit_feedback_started_event(
-                feedback_json={},
-                todo_id=todo_id,
-                proc_inst_id=proc_inst_id
-            )
-            
             # 5. LLM을 통한 에이전트별 피드백 생성
             feedback_list = await self._generate_agent_feedback_with_llm(
                 agents, changes, diff_result
@@ -89,12 +82,13 @@ class AgentFeedbackAnalyzer:
             
             logger.info(f"✅ {len(feedback_list)}개의 에이전트 피드백 생성 완료")
             
-            # 6. 피드백 생성 후 이벤트 기록 (한 번만, 전체 피드백 리스트 전달)
-            self.event_logger.emit_feedback_completed_event(
-                feedback_json={"feedbacks": feedback_list},
-                todo_id=todo_id,
-                proc_inst_id=proc_inst_id
-            )
+            # # 6. 피드백 생성 후 이벤트 기록 (한 번만, 전체 피드백 리스트 전달)
+            # self.event_logger.emit_event(
+            #     event_type="feedback_completed",
+            #     feedback_json={"feedbacks": feedback_list},
+            #     todo_id=todo_id,
+            #     proc_inst_id=proc_inst_id
+            # )
             
             # 7. 피드백이 있으면 Mem0에 지식 적재
             if feedback_list:

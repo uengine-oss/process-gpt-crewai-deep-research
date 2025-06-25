@@ -80,6 +80,8 @@ AgentMonitoring/
 
 ```bash
 uv run main.py
+uv run main.py > output.log 2>&1
+python main.py > output.log 2>&1
 ```
 
 서버가 `http://localhost:8001`에서 실행됩니다.

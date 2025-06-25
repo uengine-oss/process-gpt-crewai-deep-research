@@ -33,7 +33,7 @@ create_execution_plan:
     Dependency Rules:
     - **Reports**: NO dependencies (always independent)
     - **Slides**: Can depend on specific reports (semantic matching)
-    - **Texts**: NO dependencies needed (get all context automatically)
+    - **Texts**: Can depend on specific reports (semantic matching)
     
     Parallel Group Assignment:
     - **Report Phase**: parallel_group 1 (all reports execute in parallel)
@@ -49,8 +49,8 @@ create_execution_plan:
         "execution_plan": {{
             "report_phase": {{
                 "forms": [
-                    {{"key": "report_form_1", "dependencies": [], "parallel_group": 1}},
-                    {{"key": "report_form_2", "dependencies": [], "parallel_group": 1}}
+                    {{"key": "report_form_1", "parallel_group": 1}},
+                    {{"key": "report_form_2", "parallel_group": 1}}
                 ],
                 "strategy": "parallel"
             }},
@@ -63,8 +63,8 @@ create_execution_plan:
             }},
             "text_phase": {{
                 "forms": [
-                    {{"key": "text_form_1", "dependencies": [], "parallel_group": 3}},
-                    {{"key": "text_form_2", "dependencies": [], "parallel_group": 3}}
+                    {{"key": "text_form_1", "dependencies": ["report_form_1"], "parallel_group": 3}},
+                    {{"key": "text_form_2", "dependencies": ["report_form_2"], "parallel_group": 3}}
                 ],
                 "strategy": "batch"
             }}

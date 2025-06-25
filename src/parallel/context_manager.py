@@ -5,9 +5,32 @@ import os
 import json
 from pathlib import Path
 from dotenv import load_dotenv
+from contextvars import ContextVar
 
 load_dotenv()
 
+# ContextVar 기반으로 crew 실행 컨텍스트 관리
+crew_type_var: ContextVar[str] = ContextVar("crew_type", default="unknown")
+todo_id_var: ContextVar[str]     = ContextVar("todo_id", default=None)
+proc_id_var: ContextVar[str]     = ContextVar("proc_inst_id", default=None)
+
+def set_crew_context(crew_type: str, todo_id: str = None, proc_inst_id: str = None):
+    """
+    ContextVar에 crew_type, todo_id, proc_inst_id를 설정하고 토큰을 반환합니다.
+    사용 후 reset_crew_context로 복원하세요.
+    """
+    token_ct  = crew_type_var.set(crew_type)
+    token_td  = todo_id_var.set(todo_id)
+    token_pid = proc_id_var.set(proc_inst_id)
+    return token_ct, token_td, token_pid
+
+def reset_crew_context(token_ct, token_td, token_pid):
+    """
+    ContextVar 설정을 이전 상태로 복원합니다.
+    """
+    crew_type_var.reset(token_ct)
+    todo_id_var.reset(token_td)
+    proc_id_var.reset(token_pid)
 
 class ProcessContextManager:
     """
@@ -30,9 +53,9 @@ class ProcessContextManager:
         try:
             openai.api_key = os.getenv("OPENAI_API_KEY")
             self.openai_client = openai
-            print("✅ OpenAI 클라이언트 초기화 완료")
+            print("✅ OpenAI 클라이언트 초기화 완료", flush=True)
         except Exception as e:
-            print(f"⚠️ OpenAI 클라이언트 초기화 실패: {e}")
+            print(f"⚠️ OpenAI 클라이언트 초기화 실패: {e}", flush=True)
             self.openai_client = None
 
     def _load_all_contexts(self) -> Dict[str, Any]:
@@ -156,14 +179,8 @@ class ProcessContextManager:
             return f"요약 실패: {str(e)}"
     
     def save_context(self, proc_inst_id: str, activity_name: str, content: Any):
-        """
-        컨텍스트에 데이터 저장 (하나의 파일에서 proc_inst_id별로 관리)
-        Args:
-            proc_inst_id: 프로세스 인스턴스 ID
-            activity_name: 산출물/폼의 액티비티 이름(구분자, 로그용)
-            content: 저장할 내용 (dict, str 등)
-        """
-        print(f"💾 [SAVE_CONTEXT] {proc_inst_id} / {activity_name}")
+        """컨텍스트에 데이터 저장 (하나의 파일에서 proc_inst_id별로 관리)"""
+        print(f"💾 [SAVE_CONTEXT] {proc_inst_id} / {activity_name}", flush=True)
         if not proc_inst_id or not activity_name:
             return
         
@@ -209,22 +226,14 @@ class ProcessContextManager:
             self._save_all_contexts(all_contexts)
     
     def get_context(self, proc_inst_id: str) -> Dict[str, Any]:
-        """
-        컨텍스트 데이터 가져오기 (하나의 파일에서 특정 proc_inst_id 조회)
-        
-        Args:
-            proc_inst_id: 프로세스 인스턴스 ID
-            
-        Returns:
-            해당 proc_inst_id의 데이터
-        """
+        """컨텍스트 데이터 가져오기 (하나의 파일에서 특정 proc_inst_id 조회)"""
         if not proc_inst_id:
             return {}
         
         with self._lock:  # 동시 접근 방지
             all_contexts = self._load_all_contexts()
             data = all_contexts.get(proc_inst_id, {})
-            print(f"📖 [GET_CONTEXT] {proc_inst_id}")
+            print(f"📖 [GET_CONTEXT] {proc_inst_id}", flush=True)
             return data
 
 # 전역 인스턴스

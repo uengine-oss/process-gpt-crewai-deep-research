@@ -1,7 +1,11 @@
 from crewai import Agent, Crew, Process, Task
 from typing import Dict, Any, Optional
-from ...safe_tool_loader import SafeToolLoader
+from ...tools.safe_tool_loader import SafeToolLoader
+from ...context_manager import set_crew_context, reset_crew_context
 
+# Agent에 profile 필드를 허용하는 서브클래스 정의
+class AgentWithProfile(Agent):
+    profile: Optional[str] = None
 
 class DynamicReportCrew:
     """
@@ -9,45 +13,32 @@ class DynamicReportCrew:
     동적으로 Agent와 Task를 생성해서 Crew를 만드는 클래스 (도구 연결 버전)
     """
     
-    def __init__(self, section_data: Dict[str, Any], topic: str, previous_context: Dict[str, Any] = None):
+    def __init__(self, section_data: Dict[str, Any], topic: str, previous_context: Optional[Dict[str, Any]] = None):
         """
-        Args:
+        인자:
             section_data: 섹션별 {toc, agent, task} 데이터
             topic: 주제
-            previous_context: 이전 작업 컨텍스트
+            previous_context: 이전 완료 작업 컨텍스트
         """
+        # 이전 컨텍스트 저장
+        self.previous_context = previous_context
+        # 기본 설정
         self.topic = topic
-        self.previous_context = previous_context or {}
         self.toc_info = section_data.get("toc", {})
         self.agent_config = section_data.get("agent", {})
         self.task_config = section_data.get("task", {})
-        
-        # 🔄 이전 컨텍스트 디버깅 출력
-        print("="*60)
-        print("🔄 [DynamicReportCrew] 전달받은 이전 컨텍스트:")
-        print(f"   타입: {type(self.previous_context)}")
-        if self.previous_context:
-            print(f"   내용: (생략)")
-        else:
-            print("   내용: 비어있음")
-        print("="*60)
         
         # SafeToolLoader 다시 생성 (실제 도구 로딩용)
         self.safe_tool_loader = SafeToolLoader()
         
         self.section_title = self.toc_info.get("title", "Unknown Section")
         
-        print(f"🎯 DynamicReportCrew 초기화: {self.section_title}")
         print(f"   └─ 매칭된 에이전트: {self.agent_config.get('name', 'Unknown')} ({self.agent_config.get('role', 'Unknown')})")
-        
-        # 🔍 디버깅: agent_config에 있는 모든 키 출력
-        print(f"   └─ agent_config 키들: {list(self.agent_config.keys())}")
         
         # tool_names에서 실제 도구 객체 생성
         self.tool_names = self.agent_config.get('tool_names', [])
         self.actual_tools = self.safe_tool_loader.create_tools_from_names(self.tool_names)
         
-        print(f"   └─ 요청된 도구 이름들: {self.tool_names}")
         print(f"   └─ 실제 생성된 도구: {len(self.actual_tools)}개")
     
     def create_dynamic_agent(self) -> Agent:
@@ -58,11 +49,10 @@ class DynamicReportCrew:
         agent_goal = self.agent_config.get("goal", "Unknown Goal")
         agent_backstory = self.agent_config.get("persona", "Unknown Background")
         
-        print(f"🔧 동적 Agent 생성: {agent_role}")
         print(f"   └─ 실제 할당된 도구: {len(self.actual_tools)}개")
         
         # Agent 생성 (실제 도구 할당)
-        agent = Agent(
+        agent = AgentWithProfile(
             role=agent_role,
             goal=agent_goal,
             backstory=agent_backstory,
@@ -70,6 +60,9 @@ class DynamicReportCrew:
             verbose=True,
             cache=True
         )
+        
+        # 에이전트 프로필 설정 (section_data에서 전달된 agent_profile 사용)
+        agent.profile = self.agent_config.get('agent_profile', '')
         
         return agent
     
@@ -143,19 +136,43 @@ class DynamicReportCrew:
     
     def create_crew(self) -> Crew:
         """동적으로 Crew 생성 - CrewAI 0.117.1 호환"""
-        print(f"🔧 동적 Crew 생성: {self.agent_config.get('name', 'Unknown')} 에이전트")
-        
-        # 동적 Agent 생성
-        agent = self.create_dynamic_agent()
-        
-        # 동적 Task 생성
+        # 1) 동적 Agent, Task 생성
+        agent        = self.create_dynamic_agent()
         section_task = self.create_section_task(agent)
-        
-        # Crew 생성
-        return Crew(
+
+        # 2) 클로저를 위한 로컬 변수 복사
+        section_title    = self.section_title
+        previous_context = self.previous_context
+
+        # 3) WrappedCrew 서브클래스 정의 (kickoff_async 오버라이드)
+        class WrappedCrew(Crew):
+            async def kickoff_async(self, inputs=None):
+                # ContextVar 설정
+                token_ct, token_td, token_pid = set_crew_context(
+                    crew_type="report",
+                    todo_id=inputs.get('todo_id') if inputs else None,
+                    proc_inst_id=inputs.get('proc_inst_id') if inputs else None
+                )
+                # 시작 로그 (클로저 변수 사용)
+                print(f"[DynamicReportCrew] 시작합니다 - section={section_title}", flush=True)
+                if previous_context:
+                    snippet = str(previous_context)[:100]
+                    print(f"[DynamicReportCrew] 이전 컨텍스트: {snippet}", flush=True)
+                else:
+                    print("[DynamicReportCrew] 이전 컨텍스트: 없음", flush=True)
+                try:
+                    # 실제 부모 클래스 kickoff_async 실행
+                    return await super(WrappedCrew, self).kickoff_async(inputs=inputs)
+                finally:
+                    # ContextVar 복원
+                    reset_crew_context(token_ct, token_td, token_pid)
+
+        # 4) WrappedCrew 인스턴스 반환
+        return WrappedCrew(
             agents=[agent],
             tasks=[section_task],
             process=Process.sequential,
             verbose=True,
             cache=True,
-        ) 
+        )
+

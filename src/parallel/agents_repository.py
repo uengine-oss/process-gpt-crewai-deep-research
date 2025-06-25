@@ -1,7 +1,3 @@
-"""
-Supabase Agents Repository - 정말 간단 버전
-"""
-
 import os
 from typing import List, Dict, Any
 from dotenv import load_dotenv
@@ -15,9 +11,7 @@ class AgentsRepository:
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_key = os.getenv("SUPABASE_KEY")
         self.client: Client = create_client(self.supabase_url, self.supabase_key)
-        # role -> profile 매핑 캐시
-        self._role_profile_cache = {}
-        print("✅ AgentsRepository - Supabase 연결 완료")
+        print("[AgentsRepo] Supabase 연결 완료")
     
     def _get_fallback_agents(self) -> List[Dict[str, Any]]:
         """기본 6개 에이전트 반환"""
@@ -87,57 +81,24 @@ class AgentsRepository:
     async def get_all_agents(self, tenant_id: str = "default") -> List[Dict[str, Any]]:
         """agents 테이블에서 5개 필드(name, role, goal, persona, description)가 모두 비어있지 않은 데이터만 조회"""
         try:
-            # 5개 필드가 모두 null이 아니고 비어있지 않은 에이전트만 조회
-            response = (self.client.table("agents")
-                       .select("*")
-                       .not_.is_("name", "null")
-                       .not_.is_("role", "null") 
-                       .not_.is_("goal", "null")
-                       .not_.is_("persona", "null")
-                       .neq("name", "")
-                       .neq("role", "")
-                       .neq("goal", "")
-                       .neq("persona", "")
+            # 에이전트 조회
+            response = (self.client.table("agents").select("*")
+                       .not_.is_("name", "null").not_.is_("role", "null")
+                       .not_.is_("goal", "null").not_.is_("persona", "null")
+                       .neq("name", "").neq("role", "").neq("goal", "").neq("persona", "")
                        .execute())
-            
-            # 🆕 데이터가 없으면 기본 에이전트 반환
-            if not response.data:
-                print("⚠️ DB에 에이전트 없음 - 기본 6개 에이전트 사용")
-                fallback_agents = self._get_fallback_agents()
-                # role -> profile 매핑 캐시 업데이트
-                for agent in fallback_agents:
-                    role = agent.get('role')
-                    profile = agent.get('profile')
-                    if role and profile:
-                        self._role_profile_cache[role] = profile
-                return fallback_agents
-            
-            # 🆕 tools 필드 기본값 처리
-            for agent in response.data:
-                tools = agent.get('tools')
-                if not tools or tools.strip() == "":  # null이거나 빈값이면
-                    agent['tools'] = "mem0"  # 기본값 설정
-                
-                # role -> profile 매핑 캐시 업데이트
-                role = agent.get('role')
-                profile = agent.get('profile')
-                if role and profile:
-                    self._role_profile_cache[role] = profile
-            
-            print(f"✅ {len(response.data)}개 완전한 에이전트 조회 완료 (tools 기본값 처리됨)")
-            return response.data
-            
+            agents = response.data or []
+            # fallback 처리
+            if not agents:
+                print("[AgentsRepo] 기본 에이전트 사용")
+                return self._get_fallback_agents()
+            # tools 기본값 설정
+            for ag in agents:
+                if not ag.get('tools'):
+                    ag['tools'] = 'mem0'
+            print(f"[AgentsRepo] {len(agents)} 에이전트 조회 완료")
+            return agents
         except Exception as e:
-            print(f"❌ 에이전트 조회 실패: {e} - 기본 에이전트 사용")
-            # DB 조회 실패시에도 기본 에이전트 반환
-            fallback_agents = self._get_fallback_agents()
-            for agent in fallback_agents:
-                role = agent.get('role')
-                profile = agent.get('profile')
-                if role and profile:
-                    self._role_profile_cache[role] = profile
-            return fallback_agents
-    
-    def get_profile_by_role(self, role: str) -> str:
-        """role로 profile 조회"""
-        return self._role_profile_cache.get(role, "") 
+            print(f"[AgentsRepo] 조회 오류: {e} - 기본 에이전트 사용")
+            fallback = self._get_fallback_agents()
+            return fallback
