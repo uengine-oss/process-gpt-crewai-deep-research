@@ -23,6 +23,7 @@ dependencies = [
     "firebase-admin>=6.4.0",   # Firebase
     "pytz>=2024.1",           # 시간대 처리
     "diff-match-patch>=20230430",  # 정확한 텍스트 diff 처리
+    "vecs>=0.1.0"
 ]
 
 [project.scripts]

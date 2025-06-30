@@ -25,7 +25,7 @@ class ExecutionPlan(BaseModel):
 # MultiFormatState 모델: 플로우 상태를 저장하는 Pydantic 모델
 class MultiFormatState(BaseModel):
     topic: str = ""
-    user_info: Dict[str, Any] = Field(default_factory=dict)
+    user_info: List[Dict[str, Any]] = Field(default_factory=list)
     form_types: List[Dict[str, Any]] = Field(default_factory=list)
     execution_plan: Optional[ExecutionPlan] = None
     report_sections: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)   # 리포트별 섹션 리스트
@@ -36,6 +36,7 @@ class MultiFormatState(BaseModel):
     todo_id: Optional[int] = None                                                    # ToadList 작업 ID
     proc_inst_id: Optional[str] = None                                               # 프로세스 인스턴스 ID
     form_id: Optional[str] = None                                                    # 폼 ID
+    agent_info: Optional[List[Dict[str, Any]]] = Field(default_factory=list)         # 에이전트 정보
 
 # JSON 코드 블록을 처리하고 backtick을 제거하는 헬퍼 함수
 def _clean_json_input(raw: Any) -> str:
@@ -102,6 +103,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
                 out = await crew.kickoff_async(inputs={
                     "topic": self.state.topic,
                     "user_info": self.state.user_info,
+                    "agent_info": self.state.agent_info,
                     "previous_context": prev_context,
                     "available_agents": agents,
                     "todo_id": self.state.todo_id,

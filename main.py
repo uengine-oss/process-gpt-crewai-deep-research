@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
     initialize_connections()
     # 통합 polling 태스크 시작
     asyncio.create_task(start_todolist_polling(interval=7))  # TodoList 폴링
-    asyncio.create_task(start_feedback_polling(interval=15))  # 피드백 폴링
+    # asyncio.create_task(start_feedback_polling(interval=15))  # 피드백 폴링
     yield
     # 종료 시 실행 (필요한 경우 cleanup 로직 추가)
 

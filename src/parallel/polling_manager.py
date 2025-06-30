@@ -133,15 +133,23 @@ async def process_new_task(bundle: Dict):
         )
 
         # 사용자 정보 및 폼 정보 조회
-        user_info = await _get_user_info(row.get('user_id'))
+        participants_info = await _get_user_or_agent_info(row.get('user_id'))
         form_types = await _get_form_types(row.get('tool', ''))
         
         # 컨텐츠 생성
-        result = await _generate_content(row, form_types, user_info)
+        user_info = participants_info.get('user_info', [])
+        agent_info = participants_info.get('agent_info', [])
+        result = await _generate_content(row, form_types, user_info, agent_info)
         
-        # 결과 저장
-        cur.execute("UPDATE todolist SET draft = %s WHERE id = %s", 
-                   (json.dumps(result), row['id']))
+        # 결과 저장 - agent_mode에 따라 조건부 저장
+        if row.get('agent_mode') == 'COMPLETE':
+            # completed 모드: output에 저장하고 status를 submit으로 변경
+            cur.execute("UPDATE todolist SET output = %s, status = 'SUBMITTED' WHERE id = %s", 
+                       (json.dumps(result), row['id']))
+        else:
+            # 기본 모드: draft에 저장
+            cur.execute("UPDATE todolist SET draft = %s WHERE id = %s", 
+                       (json.dumps(result), row['id']))
         conn.commit()
         logger.info(f"✅ 작업 완료: {row['id']}")
 
@@ -154,18 +162,48 @@ async def process_new_task(bundle: Dict):
         conn.close()
 
 
-async def _get_user_info(user_email: str) -> Dict:
-    """사용자 정보 조회"""
+async def _get_user_or_agent_info(user_ids: str) -> Dict:
+    """사용자 또는 에이전트 정보 조회 (쉼표로 구분된 여러 ID 지원)"""
     supabase = supabase_client_var.get()
-    resp = supabase.table('users').select('username').eq('email', user_email).execute()
-    username = resp.data[0]['username'] if resp.data else None
     
-    return {
-        'email': user_email,
-        'name': username,
-        'department': '인사팀',
-        'position': '사원'
-    }
+    # 쉼표로 구분된 ID들을 분리
+    id_list = [id.strip() for id in user_ids.split(',') if id.strip()]
+    
+    user_info_list = []
+    agent_info_list = []
+    
+    for user_id in id_list:
+        # 먼저 users 테이블에서 조회
+        user_resp = supabase.table('users').select('username').eq('email', user_id).execute()
+        if user_resp.data:
+            username = user_resp.data[0]['username']
+            user_info_list.append({
+                'email': user_id,
+                'name': username
+            })
+            continue
+        
+        # users 테이블에 없으면 agents 테이블에서 id로 조회
+        agent_resp = supabase.table('agents').select('id, name, role, goal, persona, tools, profile').eq('id', user_id).execute()
+        if agent_resp.data:
+            agent_data = agent_resp.data[0]
+            agent_info_list.append({
+                'id': agent_data['id'],
+                'name': agent_data['name'],
+                'role': agent_data['role'],
+                'goal': agent_data['goal'],
+                'persona': agent_data['persona'],
+                'tools': agent_data['tools'],
+                'profile': agent_data['profile']
+            })
+    
+    result = {}
+    if user_info_list:
+        result['user_info'] = user_info_list
+    if agent_info_list:
+        result['agent_info'] = agent_info_list
+    
+    return result
 
 
 async def _get_form_types(tool_val: str) -> List[Dict]:
@@ -193,13 +231,14 @@ async def _get_form_types(tool_val: str) -> List[Dict]:
     return form_types
 
 
-async def _generate_content(row: Dict, form_types: List[Dict], user_info: Dict) -> Dict:
+async def _generate_content(row: Dict, form_types: List[Dict], user_info: List[Dict], agent_info: List[Dict]) -> Dict:
     """컨텐츠 생성 실행"""
     # Flow 실행
     flow = MultiFormatFlow()
     flow.state.topic = row.get('activity_name', '')
     flow.state.form_types = form_types
     flow.state.user_info = user_info
+    flow.state.agent_info = agent_info
     flow.state.todo_id = row.get('id')
     flow.state.proc_inst_id = row.get('proc_inst_id')
     flow.state.form_id = form_types[0].get('id') if form_types else None

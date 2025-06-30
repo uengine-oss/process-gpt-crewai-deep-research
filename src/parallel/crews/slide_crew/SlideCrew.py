@@ -49,8 +49,8 @@ class SlideCrew:
                 # 시작 로그
                 if inputs and 'report_content' in inputs:
                     length = len(inputs.get('report_content', '') or "")
-                    user   = inputs.get('user_info', {}).get('name', '')
-                    print(f"[SlideCrew] 시작 - length={length}, user={user}", flush=True)
+                    user_info = inputs.get('user_info', [])
+                    print(f"[SlideCrew] 시작 - length={length}, user_info={user_info}", flush=True)
                 else:
                     print("[SlideCrew] 시작 - no inputs", flush=True)
                 try:

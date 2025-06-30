@@ -907,6 +907,18 @@ wheels = [
 ]
 
 [[package]]
+name = "flupy"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e5/1f/ebbfcbaa4a117bfa2b334aac14d9d51570d0e8fee5d67426e80a80c15fc5/flupy-1.2.2.tar.gz", hash = "sha256:c28ff659b55800a26a64dd0ac1cc616355900718b87978c2db06f5e5cfb58535", size = 11971, upload-time = "2025-05-15T18:38:51.777Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/0c/9e3635262e8978882a76e8043fa178f907c2bb54132afaffa15ad720b6e5/flupy-1.2.2-py3-none-any.whl", hash = "sha256:df78e86a6b26ec1be558310b9dd967952d06cf138b1e8c0b422987fcd3d44ca0", size = 12143, upload-time = "2025-05-15T18:38:50.149Z" },
+]
+
+[[package]]
 name = "frozenlist"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2856,6 +2868,7 @@ dependencies = [
     { name = "supabase" },
     { name = "unstructured" },
     { name = "uvicorn" },
+    { name = "vecs" },
 ]
 
 [package.metadata]
@@ -2878,6 +2891,7 @@ requires-dist = [
     { name = "supabase", specifier = ">=2.0.0" },
     { name = "unstructured", specifier = ">=0.17.2" },
     { name = "uvicorn", specifier = ">=0.27.0" },
+    { name = "vecs", specifier = ">=0.1.0" },
 ]
 
 [[package]]
@@ -2926,6 +2940,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/c3/059298687310d527a58bb01f3b1965787ee3b40dce76752eda8b44e9a2c5/pexpect-4.9.0-py2.py3-none-any.whl", hash = "sha256:7236d1e080e4936be2dc3e326cec0af72acf9212a7e1d060210e70a47e253523", size = 63772, upload-time = "2023-11-25T06:56:14.81Z" },
+]
+
+[[package]]
+name = "pgvector"
+version = "0.3.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7d/d8/fd6009cee3e03214667df488cdcf9609461d729968da94e4f95d6359d304/pgvector-0.3.6.tar.gz", hash = "sha256:31d01690e6ea26cea8a633cde5f0f55f5b246d9c8292d68efdef8c22ec994ade", size = 25421, upload-time = "2024-10-27T00:15:09.632Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/81/f457d6d361e04d061bef413749a6e1ab04d98cfeec6d8abcfe40184750f3/pgvector-0.3.6-py3-none-any.whl", hash = "sha256:f6c269b3c110ccb7496bac87202148ed18f34b390a0189c783e351062400a75a", size = 24880, upload-time = "2024-10-27T00:15:08.045Z" },
 ]
 
 [[package]]
@@ -4517,6 +4543,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/0c/f07435a18a4b94ce6bd0677d8319cd3de61f3a9eeb1e5f8ab4e8b5edfcb3/uvloop-0.21.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:461d9ae6660fbbafedd07559c6a2e57cd553b34b0065b6550685f6653a98c1cb", size = 4451321, upload-time = "2024-10-14T23:37:55.766Z" },
     { url = "https://files.pythonhosted.org/packages/8f/eb/f7032be105877bcf924709c97b1bf3b90255b4ec251f9340cef912559f28/uvloop-0.21.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:183aef7c8730e54c9a3ee3227464daed66e37ba13040bb3f350bc2ddc040f22f", size = 4659022, upload-time = "2024-10-14T23:37:58.195Z" },
 ]
+
+[[package]]
+name = "vecs"
+version = "0.4.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "deprecated" },
+    { name = "flupy" },
+    { name = "pgvector" },
+    { name = "psycopg2-binary" },
+    { name = "sqlalchemy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0c/87/9fb55aff1e18278c2a0d93ba48432e060086702e258e7e13068a31376548/vecs-0.4.5.tar.gz", hash = "sha256:7cd3ab65cf88f5869d49f70ae7385e844c4915700da1f2299c938afa56148cb6", size = 22036, upload-time = "2024-12-13T20:53:50.983Z" }
 
 [[package]]
 name = "watchfiles"

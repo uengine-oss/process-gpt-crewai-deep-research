@@ -117,7 +117,6 @@ class CrewAIEventLogger:
                         return str(obj)
                 
                 serializable_record = json.loads(json.dumps(event_record, default=safe_serialize))
-                print("serializable_record: ", json.dumps(serializable_record, ensure_ascii=False, indent=2))
                 self.supabase_client.table("events").insert(serializable_record).execute()
             except Exception as e:
                 logger.error(f"❌ Supabase 저장 실패: {e}")
@@ -158,8 +157,6 @@ class CrewAIEventLogger:
                         safe_data[key] = str(value)
                     else:
                         safe_data[key] = value
-
-                    print("safe_data: ", json.dumps(safe_data, ensure_ascii=False, indent=2))
 
                 except Exception as e:
                     logger.warning(f"Data 직렬화 실패 ({key}): {e}")

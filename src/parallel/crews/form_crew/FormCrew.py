@@ -48,8 +48,8 @@ class FormCrew:
                 if inputs:
                     topic = inputs.get('topic', '')
                     count = len(inputs.get('field_info', []))
-                    user  = inputs.get('user_info', {}).get('name', '')
-                    print(f"[FormCrew] 시작합니다 - topic={topic}, fields={count}, user={user}", flush=True)
+                    user_info = inputs.get('user_info', [])
+                    print(f"[FormCrew] 시작합니다 - topic={topic}, fields={count}, user_info={user_info}", flush=True)
                 else:
                     print("[FormCrew] 시작합니다 - no inputs", flush=True)
                 try:
