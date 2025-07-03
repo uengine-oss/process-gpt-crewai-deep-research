@@ -8,8 +8,8 @@ from ..settings.crew_event_logger import CrewAIEventLogger
 import traceback
 import asyncio
 import re
-from ..context_manager import context_manager
 from ..agents_repository import AgentsRepository
+from ..database import save_task_result
 
 # Phase 모델: 각 단계의 폼 리스트와 전략을 담는 Pydantic 모델
 class Phase(BaseModel):
@@ -37,6 +37,7 @@ class MultiFormatState(BaseModel):
     proc_inst_id: Optional[str] = None                                               # 프로세스 인스턴스 ID
     form_id: Optional[str] = None                                                    # 폼 ID
     agent_info: Optional[List[Dict[str, Any]]] = Field(default_factory=list)         # 에이전트 정보
+    previous_context: str = ""                                                       # 요약된 이전 완료 outputs
 
 # JSON 코드 블록을 처리하고 backtick을 제거하는 헬퍼 함수
 def _clean_json_input(raw: Any) -> str:
@@ -99,7 +100,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
                 agents = await AgentsRepository().get_all_agents()
                 crew = self.cm.create_agent_matching_crew()
                 # 이전 컨텍스트 조회
-                prev_context = context_manager.get_context(self.state.proc_inst_id)
+                prev_context = self.state.previous_context
                 out = await crew.kickoff_async(inputs={
                     "topic": self.state.topic,
                     "user_info": self.state.user_info,
@@ -115,17 +116,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
                 sections = json.loads(cleaned)
                 self.state.report_sections[report_key] = sections
                 self.state.section_contents[report_key] = {}
-                # 2) 섹션별 동적 리포트 생성 (병렬)
-                titles = [sec['toc']['title'] for sec in sections]
-                tasks = [self._run_dynamic_report(sec) for sec in sections]
-                results = await asyncio.gather(*tasks)
-                for title, res in zip(titles, results):
-                    if isinstance(res, Exception):
-                        print(f"❌ [Error][generate_and_merge_report_sections] report={report_key}, section={title} error={res}")
-                        self.state.section_contents[report_key][title] = f"Error: {res}"
-                    else:
-                        self.state.section_contents[report_key][title] = res
-                
+                # 2) 섹션별 리포트 생성 및 중간 저장
+                await self._process_report_sections(report_key, sections)
                 # 3) 섹션 병합 작업 시작 이벤트 발행
                 self.event_logger.emit_event(
                     event_type="task_started",
@@ -140,8 +132,13 @@ class MultiFormatFlow(Flow[MultiFormatState]):
                     proc_inst_id=self.state.proc_inst_id
                 )
                 
-                # 섹션 결과 병합
-                merged_report = "\n\n---\n\n".join(self.state.section_contents[report_key].values())
+                # 섹션 결과 병합 (report_sections 순서 유지)
+                ordered_titles = [sec_item.get('toc', {}).get('title', 'unknown') for sec_item in self.state.report_sections[report_key]]
+                merged_report = "\n\n---\n\n".join([
+                    self.state.section_contents[report_key][t]
+                    for t in ordered_titles
+                    if t in self.state.section_contents[report_key]
+                ])
                 self.state.report_contents[report_key] = merged_report
                 
                 # 섹션 병합 작업 완료 이벤트 발행
@@ -168,7 +165,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         title = sec.get('toc', {}).get('title', 'unknown')
         try:
             # DynamicReportCrew 생성 및 kickoff
-            prev_context = context_manager.get_context(self.state.proc_inst_id)
+            prev_context = self.state.previous_context
             crew = DynamicReportCrew(sec, self.state.topic, prev_context)
             out = await crew.create_crew().kickoff_async(inputs={
                 "todo_id": self.state.todo_id,
@@ -179,6 +176,37 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             print(f"❌ [Error][_run_dynamic_report] section={title}, error={e}")
             print(traceback.format_exc())
             raise
+
+    async def _process_report_sections(self, report_key: str, sections: List[Dict[str, Any]]) -> None:
+        # 비동기로 각 섹션을 생성하고, 완료 시마다 중간 결과를 병합 후 DB 저장
+        # 1) Task 생성 및 섹션 매핑
+        tasks_list = [asyncio.create_task(self._run_dynamic_report(sec)) for sec in sections]
+        sec_map = {task: sec for task, sec in zip(tasks_list, sections)}
+        pending = set(tasks_list)
+        # 2) 완료된 순서대로 처리
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                sec = sec_map[task]
+                title = sec.get('toc', {}).get('title', 'unknown')
+                try:
+                    result = task.result()
+                    self.state.section_contents[report_key][title] = result
+                except Exception as e:
+                    print(f"❌ [Error][_process_report_sections] report={report_key}, section={title} error={e}")
+                    self.state.section_contents[report_key][title] = f"Error: {e}"
+                # 3) 순서 보장하여 현재까지 처리된 섹션 병합
+                ordered_titles = [s.get('toc', {}).get('title', 'unknown') for s in sections]
+                merged = "\n\n---\n\n".join(
+                    [self.state.section_contents[report_key][t] for t in ordered_titles if t in self.state.section_contents[report_key]]
+                )
+                self.state.report_contents[report_key] = merged
+                # 4) DB에 중간 결과 저장
+                if self.state.todo_id is not None:
+                    await save_task_result(self.state.todo_id, self.state.report_contents)
+                else:
+                    print("⚠️ todo_id가 None입니다. 중간 결과 저장을 건너뜁니다.")
+        # helper 종료
 
     @listen("generate_and_merge_report_sections")
     # generate_slides_from_reports: report_contents 기반 슬라이드 생성 (-> Dict[슬라이드키: 내용])
@@ -232,8 +260,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         return self.state.text_contents
 
     @listen("generate_texts_from_reports")
-    # compile_and_output_results: 최종 통계 출력 및 결과 반환
-    def compile_and_output_results(self) -> dict:
+    # compile_and_output_results: 최종 통계 출력 및 결과 저장 및 DB 저장
+    async def compile_and_output_results(self) -> None:
         # 최종 통계 출력 및 결과 반환
         try:
             print("\n" + "="*60)
@@ -244,18 +272,18 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             slide_count = len(self.state.slide_contents)  # 직접 길이 계산
             form_count = len(self.state.text_contents)    # 직접 길이 계산
             print(f"📊 처리 결과: 리포트 {report_count}개, 슬라이드 {slide_count}개, 폼 {form_count}개")
-            # 컨텍스트 저장: 리포트 및 텍스트 결과만 저장
-            context_manager.save_context(
-                self.state.proc_inst_id,
-                self.state.form_id or "",
-                {'reports': self.state.report_contents, 'texts': self.state.text_contents}
-            )
-            # 포맷 반환: dict 형태로 반환하여 draft 컬럼에 유의미한 JSON 저장
-            return {
+
+            # DB에 결과 저장
+            result = {
                 'reports': self.state.report_contents,
                 'slides': self.state.slide_contents,
                 'texts': self.state.text_contents
             }
+            if self.state.todo_id is not None:
+                # 최종 호출: final flag 전달하여 draft_status 완료로 변경
+                await save_task_result(self.state.todo_id, result, final=True)
+            else:
+                print("⚠️ todo_id가 None입니다. DB 저장을 건너뜁니다.")
         except Exception as e:
             print(f"❌ [Error][compile_and_output_results] error={e}")
             print(traceback.format_exc())

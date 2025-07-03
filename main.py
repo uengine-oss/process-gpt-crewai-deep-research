@@ -33,7 +33,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from router import add_routes_to_app
-from src.parallel.polling_manager import start_todolist_polling, start_feedback_polling, initialize_connections
+from src.parallel.polling_manager import start_todolist_polling, initialize_connections
 
 # 백그라운드 태스크 관리를 위한 lifespan 함수
 @asynccontextmanager
@@ -41,8 +41,7 @@ async def lifespan(app: FastAPI):
     # 시작 시 실행
     initialize_connections()
     # 통합 polling 태스크 시작
-    asyncio.create_task(start_todolist_polling(interval=7))  # TodoList 폴링
-    # asyncio.create_task(start_feedback_polling(interval=15))  # 피드백 폴링
+    asyncio.create_task(start_todolist_polling(interval=7))
     yield
     # 종료 시 실행 (필요한 경우 cleanup 로직 추가)
 

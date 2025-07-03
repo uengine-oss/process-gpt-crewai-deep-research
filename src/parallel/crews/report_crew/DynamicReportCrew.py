@@ -49,7 +49,8 @@ class DynamicReportCrew:
         agent_role = self.agent_config.get("role", "Unknown Role")
         agent_goal = self.agent_config.get("goal", "Unknown Goal")
         agent_backstory = self.agent_config.get("persona", "Unknown Background")
-        
+        llm_model = self.agent_config.get("model", "gpt-4.1")
+
         print(f"   └─ 실제 할당된 도구: {len(self.actual_tools)}개")
         
         # Agent 생성 (실제 도구 할당)
@@ -57,6 +58,7 @@ class DynamicReportCrew:
             role=agent_role,
             goal=agent_goal,
             backstory=agent_backstory,
+            llm=llm_model,
             tools=self.actual_tools,  # 실제 Tool 객체들 할당
             verbose=True,
             cache=True
