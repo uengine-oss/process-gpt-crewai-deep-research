@@ -11,7 +11,7 @@ from supabase import create_client, Client
 
 # 필요한 모듈 임포트
 from .context_manager import summarize
-from .database import initialize_db, fetch_pending_task, fetch_done_data
+from .database import initialize_db, fetch_pending_task, fetch_done_data, fetch_task_status
 
 # ============================================================================
 # 공통 설정 및 초기화
@@ -66,6 +66,7 @@ async def process_new_task(bundle: Dict):
 
         # 1) 이전 컨텍스트 요약
         done_outputs, done_feedbacks = await fetch_done_data(proc_inst_id)
+        print("feedbacks", done_feedbacks)
         context_summary = summarize(done_outputs, done_feedbacks)
 
         # 2) 사용자 & 폼 조회
@@ -134,28 +135,29 @@ async def _get_user_or_agent_info(user_ids: str) -> Dict:
     agent_info_list = []
     
     for user_id in id_list:
-        # 먼저 users 테이블에서 조회
-        user_resp = supabase.table('users').select('username').eq('email', user_id).execute()
-        if user_resp.data:
-            username = user_resp.data[0]['username']
+        # 이메일 조회 우선: 있으면 사용자로 처리
+        resp_email = supabase.table('users').select('id, email, username')\
+            .eq('email', user_id).execute()
+        if resp_email.data:
+            user = resp_email.data[0]
             user_info_list.append({
-                'email': user_id,
-                'name': username
+                'email': user.get('email'),
+                'name': user.get('username')
             })
             continue
-        
-        # users 테이블에 없으면 agents 테이블에서 id로 조회
-        agent_resp = supabase.table('agents').select('id, name, role, goal, persona, tools, profile').eq('id', user_id).execute()
-        if agent_resp.data:
-            agent_data = agent_resp.data[0]
+        # 이메일 조회 실패 시 id로 조회, is_agent 확인
+        resp_id = supabase.table('users').select('id, name, role, goal, persona, tools, profile, is_agent')\
+            .eq('id', user_id).execute()
+        if resp_id.data and resp_id.data[0].get('is_agent'):
+            agent = resp_id.data[0]
             agent_info_list.append({
-                'id': agent_data['id'],
-                'name': agent_data['name'],
-                'role': agent_data['role'],
-                'goal': agent_data['goal'],
-                'persona': agent_data['persona'],
-                'tools': agent_data['tools'],
-                'profile': agent_data['profile']
+                'id': agent.get('id'),
+                'name': agent.get('name'),
+                'role': agent.get('role'),
+                'goal': agent.get('goal'),
+                'persona': agent.get('persona'),
+                'tools': agent.get('tools'),
+                'profile': agent.get('profile')
             })
     
     result = {}
@@ -196,18 +198,15 @@ async def _get_form_types(tool_val: str) -> List[Dict]:
 # 워커 취소 상태 감시 함수 추가
 async def _watch_cancel_status():
     global current_todo_id, current_process, worker_terminated_by_us
-    # supabase client를 사용하여 draft_status 조회
+    # 로컬 DB에서 draft_status 조회하여 취소 감지
     todo_id = current_todo_id
     if todo_id is None:
         return
-    supabase: Client = supabase_client_var.get()
-    # 주기적으로 draft_status가 CANCELLED인지 확인
+    # 주기적으로 draft_status가 CANCELLED 또는 FB_REQUESTED인지 확인
     while current_process and current_process.returncode is None and not worker_terminated_by_us:
         await asyncio.sleep(5)
         try:
-            resp = supabase.table('todolist').select('draft_status').eq('id', todo_id).single().execute()
-            data = resp.data
-            draft_status = data.get('draft_status') if isinstance(data, dict) else None
+            draft_status = await fetch_task_status(todo_id)
             if draft_status in ('CANCELLED', 'FB_REQUESTED'):
                 logger.info(f"🛑 draft_status={draft_status} 감지 (id={todo_id}) → 워커 종료")
                 terminate_current_worker()

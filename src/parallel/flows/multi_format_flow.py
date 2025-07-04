@@ -284,6 +284,16 @@ class MultiFormatFlow(Flow[MultiFormatState]):
                 await save_task_result(self.state.todo_id, result, final=True)
             else:
                 print("⚠️ todo_id가 None입니다. DB 저장을 건너뜁니다.")
+
+            self.event_logger.emit_event(
+                    event_type="crew_completed",
+                    data={},
+                    job_id=f"CREW_FINISHED",
+                    crew_type="crew",
+                    todo_id=self.state.todo_id,
+                    proc_inst_id=self.state.proc_inst_id
+            )
+                
         except Exception as e:
             print(f"❌ [Error][compile_and_output_results] error={e}")
             print(traceback.format_exc())

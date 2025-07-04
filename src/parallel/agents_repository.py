@@ -82,7 +82,8 @@ class AgentsRepository:
         """agents 테이블에서 5개 필드(name, role, goal, persona, description)가 모두 비어있지 않은 데이터만 조회"""
         try:
             # 에이전트 조회
-            response = (self.client.table("agents").select("*")
+            response = (self.client.table("users").select("*" )
+                       .eq("is_agent", True)
                        .not_.is_("name", "null").not_.is_("role", "null")
                        .not_.is_("goal", "null").not_.is_("persona", "null")
                        .neq("name", "").neq("role", "").neq("goal", "").neq("persona", "")

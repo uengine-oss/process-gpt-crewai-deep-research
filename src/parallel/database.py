@@ -69,7 +69,7 @@ async def fetch_pending_task(limit: int = 1) -> Optional[Dict[str, Any]]:
 
 async def fetch_done_data(proc_inst_id: Optional[str]) -> Tuple[List[Any], List[Any]]:
     """
-    완료된 작업들의 output, feedback 리스트 조회
+    완료된 작업들의 output(또는 draft) 및 feedback 리스트 조회
     """
     def _sync():
         outputs: List[Any] = []
@@ -79,8 +79,12 @@ async def fetch_done_data(proc_inst_id: Optional[str]) -> Tuple[List[Any], List[
         conn = _get_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
-            """SELECT output, feedback FROM todolist
-               WHERE proc_inst_id = %s AND status = 'DONE' AND output IS NOT NULL
+            """SELECT status, output, feedback, draft FROM todolist
+               WHERE proc_inst_id = %s
+                 AND (
+                   (status = 'DONE' AND output IS NOT NULL)
+                   OR (status = 'IN_PROGRESS' AND feedback IS NOT NULL)
+                 )
                ORDER BY start_date ASC""",
             (proc_inst_id,)
         )
@@ -89,11 +93,44 @@ async def fetch_done_data(proc_inst_id: Optional[str]) -> Tuple[List[Any], List[
         conn.close()
         for r in rows:
             if isinstance(r, dict):
-                outputs.append(r.get('output'))
-                feedbacks.append(r.get('feedback'))
+                status = r.get('status')
+                feedback = r.get('feedback')
+                # IN_PROGRESS + feedback 있는 경우 draft에서 reports만 추출
+                if status == 'IN_PROGRESS' and feedback is not None:
+                    draft = r.get('draft')
+                    if isinstance(draft, str):
+                        try:
+                            parsed = json.loads(draft)
+                            outputs.append(parsed.get('reports'))
+                        except Exception:
+                            outputs.append(draft)
+                    elif isinstance(draft, dict):
+                        outputs.append(draft.get('reports'))
+                    else:
+                        outputs.append(draft)
+                else:
+                    outputs.append(r.get('output'))
+                feedbacks.append(feedback)
             else:
-                outputs.append(r[0])
-                feedbacks.append(r[1] if len(r) > 1 else None)
+                # row tuple: (status, output, feedback, draft)
+                status = r[0]
+                feedback = r[2] if len(r) > 2 else None
+                # IN_PROGRESS + feedback 있는 경우 draft에서 reports만 추출
+                if status == 'IN_PROGRESS' and feedback is not None:
+                    draft = r[3] if len(r) > 3 else None
+                    if isinstance(draft, str):
+                        try:
+                            parsed = json.loads(draft)
+                            outputs.append(parsed.get('reports'))
+                        except Exception:
+                            outputs.append(draft)
+                    elif isinstance(draft, dict):
+                        outputs.append(draft.get('reports'))
+                    else:
+                        outputs.append(draft)
+                else:
+                    outputs.append(r[1] if len(r) > 1 else None)
+                feedbacks.append(feedback)
         return outputs, feedbacks
     return await asyncio.to_thread(_sync)
 
@@ -133,4 +170,19 @@ async def save_task_result(todo_id: int, result: Any, final: bool = False) -> No
         conn.commit()
         cur.close()
         conn.close()
-    await asyncio.to_thread(_sync) 
+    await asyncio.to_thread(_sync)
+
+async def fetch_task_status(todo_id: int) -> Optional[str]:
+    """지정된 todo_id의 draft_status를 조회합니다."""
+    def _sync():
+        conn = _get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            "SELECT draft_status FROM todolist WHERE id = %s",
+            (todo_id,)
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return row.get('draft_status') if row else None
+    return await asyncio.to_thread(_sync) 

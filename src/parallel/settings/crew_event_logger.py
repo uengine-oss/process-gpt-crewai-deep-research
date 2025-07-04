@@ -78,7 +78,7 @@ class CrewAIEventLogger:
             if event_type == "task_started":
                 role = getattr(event_obj.task.agent, 'role', 'Unknown')
                 goal = getattr(event_obj.task.agent, 'goal', 'Unknown')
-                profile = getattr(event_obj.task.agent, 'profile', None)
+                profile = getattr(event_obj.task.agent, 'profile', None) or "/images/chat-icon.png"
                 return {"role": role, "goal": goal, "agent_profile": profile}
             elif event_type == "task_completed":
                 final_result = getattr(event_obj, 'output', 'Completed')
