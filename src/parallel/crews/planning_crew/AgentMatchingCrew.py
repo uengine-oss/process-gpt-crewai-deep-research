@@ -1,9 +1,32 @@
-from functools import wraps
+import logging
+import traceback
+from typing import Dict, Any
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
-from typing import List, Dict, Any
-from ...agents_repository import AgentsRepository
 from ...context_manager import set_crew_context, reset_crew_context
+
+# ============================================================================
+# 설정 및 초기화
+# ============================================================================
+
+# 로거 설정
+logger = logging.getLogger("agent_matching_crew")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+def _handle_error(operation: str, error: Exception) -> None:
+    """통합 에러 처리"""
+    error_msg = f"❌ [{operation}] 오류 발생: {str(error)}"
+    logger.error(error_msg)
+    logger.error(f"상세 정보: {traceback.format_exc()}")
+    raise Exception(f"{operation} 실패: {error}")
+
+# ============================================================================
+# AgentMatchingCrew 클래스
+# ============================================================================
 
 @CrewBase
 class AgentMatchingCrew:
@@ -19,7 +42,6 @@ class AgentMatchingCrew:
 
     def __init__(self):
         super().__init__()
-        self.agents_repository = AgentsRepository()
 
     @agent
     def toc_generator_and_agent_matcher(self) -> Agent:
@@ -40,34 +62,71 @@ class AgentMatchingCrew:
 
     @crew
     def crew(self) -> Crew:
-        """Agent Matching Crew 구성: WrappedCrew로 kickoff_async override 적용"""
-        class WrappedCrew(Crew):
-            async def kickoff_async(self, inputs: Dict[str, Any] = None):
-                # 1) ContextVar 설정
-                token_ct, token_td, token_pid = set_crew_context(
-                    crew_type="planning",
-                    todo_id=inputs.get('todo_id') if inputs else None,
-                    proc_inst_id=inputs.get('proc_inst_id') if inputs else None
-                )
-                # 2) 시작 로그: 이전 컨텍스트 일부 출력
-                if inputs and 'previous_context' in inputs and inputs['previous_context']:
-                    snippet = str(inputs['previous_context'])[:100]
-                    print(f"[AgentMatchingCrew] 시작합니다 - prev_context={snippet}", flush=True)
-                else:
-                    print("[AgentMatchingCrew] 시작합니다", flush=True)
-                try:
-                    # 3) 실제 Crew.kickoff_async 실행
-                    return await super(WrappedCrew, self).kickoff_async(inputs=inputs)
-                finally:
-                    # 4) 종료 로그 + ContextVar 복원
-                    print(f"[AgentMatchingCrew] 종료합니다 - inputs={inputs}", flush=True)
-                    reset_crew_context(token_ct, token_td, token_pid)
-
-        # WrappedCrew 인스턴스 반환
+        """Agent Matching Crew 구성"""
         return WrappedCrew(
-            agents=[ self.toc_generator_and_agent_matcher() ],
-            tasks=[ self.design_activity_tasks() ],
+            agents=[self.toc_generator_and_agent_matcher()],
+            tasks=[self.design_activity_tasks()],
             process=Process.sequential,
             verbose=True,
             cache=True
         )
+
+# ============================================================================
+# WrappedCrew 클래스
+# ============================================================================
+
+class WrappedCrew(Crew):
+    """컨텍스트 관리와 로깅이 추가된 크루"""
+
+    async def kickoff_async(self, inputs: Dict[str, Any] = None):
+        """비동기 실행 with 컨텍스트 관리 및 로깅"""
+        # 컨텍스트 설정
+        tokens = self._setup_context(inputs)
+        
+        try:
+            # 시작 로그
+            self._log_start(inputs)
+            
+            # 실제 크루 실행
+            result = await super().kickoff_async(inputs=inputs)
+            
+            # 완료 로그
+            self._log_completion(inputs)
+            return result
+            
+        except Exception as e:
+            _handle_error("AgentMatchingCrew 실행", e)
+            
+        finally:
+            # 컨텍스트 정리
+            self._cleanup_context(tokens)
+
+    # ============================================================================
+    # 헬퍼 메서드들
+    # ============================================================================
+
+    def _setup_context(self, inputs):
+        """컨텍스트 변수 설정"""
+        return set_crew_context(
+            crew_type="planning",
+            todo_id=inputs.get('todo_id') if inputs else None,
+            proc_inst_id=inputs.get('proc_inst_id') if inputs else None
+        )
+
+    def _log_start(self, inputs):
+        """시작 로그"""
+        if inputs and 'previous_context' in inputs and inputs['previous_context']:
+            context_snippet = str(inputs['previous_context'])[:100]
+            logger.info(f"🚀 AgentMatchingCrew 시작: context_preview={context_snippet}...")
+        else:
+            logger.info("🚀 AgentMatchingCrew 시작: 이전 컨텍스트 없음")
+
+    def _log_completion(self, inputs):
+        """완료 로그"""
+        input_keys = list(inputs.keys()) if inputs else None
+        logger.info(f"✅ AgentMatchingCrew 완료: inputs={input_keys}")
+
+    def _cleanup_context(self, tokens):
+        """컨텍스트 정리"""
+        token_ct, token_td, token_pid, token_fid = tokens
+        reset_crew_context(token_ct, token_td, token_pid, token_fid)

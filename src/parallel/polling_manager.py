@@ -3,18 +3,20 @@ import logging
 import json
 import os
 import sys
-from typing import Optional, List, Dict, Any, Tuple
-from contextvars import ContextVar
-from dotenv import load_dotenv
-
-from supabase import create_client, Client
-
-# 필요한 모듈 임포트
+import traceback
+from typing import Optional, Dict
 from .context_manager import summarize
-from .database import initialize_db, fetch_pending_task, fetch_done_data, fetch_task_status
+from .database import (
+    initialize_db, 
+    fetch_pending_task, 
+    fetch_done_data, 
+    fetch_task_status,
+    fetch_participants_info,
+    fetch_form_types
+)
 
 # ============================================================================
-# 공통 설정 및 초기화
+# 설정 및 초기화
 # ============================================================================
 
 logger = logging.getLogger("polling_manager")
@@ -24,185 +26,142 @@ if not logger.handlers:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
-# 공통 컨텍스트 변수
-supabase_client_var = ContextVar('supabase', default=None)
-
-# 글로벌 플래그 & 프로세스 핸들러
+# 글로벌 상태
 current_todo_id: Optional[int] = None
 current_process: Optional[asyncio.subprocess.Process] = None
 worker_terminated_by_us: bool = False
 
 def initialize_connections():
-    """데이터베이스 및 Supabase 연결 초기화"""
+    """데이터베이스 연결 초기화"""
     try:
-        # DB 설정 초기화 (database.py 관리)
         initialize_db()
-        # Supabase 초기화
-        if os.getenv("ENV") != "production":
-            load_dotenv()
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
-        supabase: Client = create_client(supabase_url, supabase_key)
-        supabase_client_var.set(supabase)
         logger.info("✅ 연결 초기화 완료")
     except Exception as e:
-        logger.error(f"❌ 초기화 오류: {e}")
+        logger.error(f"❌ 초기화 실패: {str(e)}")
+        logger.error(f"상세 정보: {traceback.format_exc()}")
+        raise
 
+def _handle_error(operation: str, error: Exception) -> None:
+    """통합 에러 처리"""
+    error_msg = f"❌ [{operation}] 오류 발생: {str(error)}"
+    logger.error(error_msg)
+    logger.error(f"상세 정보: {traceback.format_exc()}")
+    raise Exception(f"{operation} 실패: {error}")
 
 # ============================================================================
-# 새 작업 처리 (TodoList Polling)
+# 작업 처리 메인 로직
 # ============================================================================
 
 async def process_new_task(bundle: Dict):
+    """새 작업 처리"""
     global current_process, worker_terminated_by_us, current_todo_id
-
+    
     row, conn, cur = bundle['row'], bundle['connection'], bundle['cursor']
     current_todo_id = row['id']
     todo_id = row['id']
     proc_inst_id = row.get('proc_inst_id')
-
+    
     try:
         logger.info(f"🆕 새 작업 처리 시작: id={todo_id}, proc_inst_id={proc_inst_id}")
+        
+        # 작업 데이터 준비 및 워커 실행
+        inputs = await _prepare_task_inputs(row)
+        await _execute_worker_process(inputs, todo_id)
+        
+        conn.commit()
+        
+    except Exception as e:
+        _handle_error("작업처리", e)
+        conn.rollback()
+        
+    finally:
+        # 자원 정리
+        _cleanup_resources(cur, conn)
 
-        # 1) 이전 컨텍스트 요약
-        done_outputs, done_feedbacks = await fetch_done_data(proc_inst_id)
-        print("feedbacks", done_feedbacks)
-        context_summary = summarize(done_outputs, done_feedbacks)
+async def _prepare_task_inputs(row: Dict) -> Dict:
+    """작업 입력 데이터 준비"""
+    todo_id = row['id']
+    proc_inst_id = row.get('proc_inst_id')
+    
+    # 이전 컨텍스트 요약
+    done_outputs, done_feedbacks = await fetch_done_data(proc_inst_id)
+    context_summary = summarize(done_outputs, done_feedbacks)
+    
+    # 사용자 및 폼 정보 조회
+    participants = await fetch_participants_info(row.get('user_id', ''))
+    form_types = await fetch_form_types(row.get('tool', ''))
+    
+    return {
+        "todo_id": todo_id,
+        "proc_inst_id": proc_inst_id,
+        "topic": row.get('activity_name', ''),
+        "previous_context": context_summary,
+        "user_info": participants.get('user_info', []),
+        "agent_info": participants.get('agent_info', []),
+        "form_types": form_types,
+    }
 
-        # 2) 사용자 & 폼 조회
-        participants = await _get_user_or_agent_info(row.get('user_id', ''))
-        form_types = await _get_form_types(row.get('tool', ''))
+def _cleanup_resources(cur, conn):
+    """자원 정리"""
+    global current_process, worker_terminated_by_us, current_todo_id
+    
+    if cur:
+        cur.close()
+    if conn:
+        conn.close()
+    current_process = None
+    worker_terminated_by_us = False
+    current_todo_id = None
 
-        # 3) 워커에 넘길 inputs 준비
-        inputs = {
-            "todo_id": todo_id,
-            "proc_inst_id": proc_inst_id,
-            "topic": row.get('activity_name', ''),
-            "previous_context": context_summary,
-            "user_info": participants.get('user_info', []),
-            "agent_info": participants.get('agent_info', []),
-            "form_types": form_types,
-        }
+# ============================================================================
+# 워커 프로세스 관리
+# ============================================================================
 
-        # 4) 워커 프로세스 실행
+async def _execute_worker_process(inputs: Dict, todo_id: int):
+    """워커 프로세스 실행 및 관리"""
+    global current_process, worker_terminated_by_us
+    
+    try:
+        # 워커 프로세스 시작
         worker_terminated_by_us = False
         current_process = await asyncio.create_subprocess_exec(
             sys.executable,
             os.path.join(os.path.dirname(__file__), "worker.py"),
             "--inputs", json.dumps(inputs, ensure_ascii=False),
-            # stdout/stderr를 지정하지 않으면 부모(메인) 콘솔에 모두 출력됩니다.
         )
+        
+        # 취소 상태 감시 및 워커 대기
         watch_task = asyncio.create_task(_watch_cancel_status())
         logger.info(f"✅ 워커 시작 (PID={current_process.pid})")
-
-        # 5) 워커 종료 대기
+        
         await current_process.wait()
         if not watch_task.done():
             watch_task.cancel()
-
-        # 6) 종료 결과 로그
-        if worker_terminated_by_us:
-            logger.info(f"🛑 워커 사용자 중단됨 (PID={current_process.pid})")
-        elif current_process.returncode != 0:
-            logger.error(f"❌ 워커 비정상 종료 (code={current_process.returncode})")
-        else:
-            logger.info(f"✅ 워커 정상 종료 (PID={current_process.pid})")
-
-        # 7) 락 해제용 커밋
-        conn.commit()
-
+        
+        # 종료 결과 로그
+        _log_worker_result()
+        
     except Exception as e:
-        logger.error(f"❌ process_new_task 오류 (id={todo_id}): {e}")
-        conn.rollback()
+        _handle_error("워커실행", e)
 
-    finally:
-        # 8) 자원 정리
-        cur.close()
-        conn.close()
-        current_process = None
-        worker_terminated_by_us = False
-        current_todo_id = None
+def _log_worker_result():
+    """워커 종료 결과 로그"""
+    if worker_terminated_by_us:
+        logger.info(f"🛑 워커 사용자 중단됨 (PID={current_process.pid})")
+    elif current_process.returncode != 0:
+        logger.error(f"❌ 워커 비정상 종료 (code={current_process.returncode})")
+    else:
+        logger.info(f"✅ 워커 정상 종료 (PID={current_process.pid})")
 
-
-async def _get_user_or_agent_info(user_ids: str) -> Dict:
-    """사용자 또는 에이전트 정보 조회 (쉼표로 구분된 여러 ID 지원)"""
-    supabase = supabase_client_var.get()
-    
-    # 쉼표로 구분된 ID들을 분리
-    id_list = [id.strip() for id in user_ids.split(',') if id.strip()]
-    
-    user_info_list = []
-    agent_info_list = []
-    
-    for user_id in id_list:
-        # 이메일 조회 우선: 있으면 사용자로 처리
-        resp_email = supabase.table('users').select('id, email, username')\
-            .eq('email', user_id).execute()
-        if resp_email.data:
-            user = resp_email.data[0]
-            user_info_list.append({
-                'email': user.get('email'),
-                'name': user.get('username')
-            })
-            continue
-        # 이메일 조회 실패 시 id로 조회, is_agent 확인
-        resp_id = supabase.table('users').select('id, name, role, goal, persona, tools, profile, is_agent')\
-            .eq('id', user_id).execute()
-        if resp_id.data and resp_id.data[0].get('is_agent'):
-            agent = resp_id.data[0]
-            agent_info_list.append({
-                'id': agent.get('id'),
-                'name': agent.get('name'),
-                'role': agent.get('role'),
-                'goal': agent.get('goal'),
-                'persona': agent.get('persona'),
-                'tools': agent.get('tools'),
-                'profile': agent.get('profile')
-            })
-    
-    result = {}
-    if user_info_list:
-        result['user_info'] = user_info_list
-    if agent_info_list:
-        result['agent_info'] = agent_info_list
-    
-    print(result)
-    return result
-
-
-async def _get_form_types(tool_val: str) -> List[Dict]:
-    """폼 타입 정보 조회 및 정규화"""
-    form_id = tool_val[12:] if tool_val.startswith('formHandler:') else tool_val
-    
-    supabase = supabase_client_var.get()
-    resp = supabase.table('form_def').select('fields_json').eq('id', form_id).execute()
-    fields_json = resp.data[0].get('fields_json') if resp.data else None
-    
-    if not fields_json:
-        return [{'id': form_id, 'type': 'default'}]
-    
-    form_types = []
-    for field in fields_json:
-        field_type = field.get('type', '').lower()
-        normalized_type = field_type if field_type in ['report', 'slide'] else 'text'
-        form_types.append({
-            'id': field.get('key'),
-            'type': normalized_type,
-            'key': field.get('key'),
-            'text': field.get('text', '')
-        })
-    
-    return form_types
-
-
-# 워커 취소 상태 감시 함수 추가
 async def _watch_cancel_status():
+    """워커 취소 상태 감시"""
     global current_todo_id, current_process, worker_terminated_by_us
-    # 로컬 DB에서 draft_status 조회하여 취소 감지
+    
     todo_id = current_todo_id
     if todo_id is None:
         return
-    # 주기적으로 draft_status가 CANCELLED 또는 FB_REQUESTED인지 확인
+    
+    # 주기적으로 취소 상태 확인
     while current_process and current_process.returncode is None and not worker_terminated_by_us:
         await asyncio.sleep(5)
         try:
@@ -212,12 +171,12 @@ async def _watch_cancel_status():
                 terminate_current_worker()
                 break
         except Exception as e:
-            logger.error(f"❌ cancel 상태 조회 오류 (id={todo_id}): {e}")
-
+            logger.error(f"❌ 취소 상태 조회 실패 (id={todo_id}): {str(e)}")
 
 def terminate_current_worker():
-    """현재 실행 중인 워커 프로세스에 SIGTERM 전송"""
+    """현재 실행 중인 워커 프로세스 종료"""
     global current_process, worker_terminated_by_us
+    
     if current_process and current_process.returncode is None:
         worker_terminated_by_us = True
         current_process.terminate()
@@ -225,20 +184,22 @@ def terminate_current_worker():
     else:
         logger.warning("⚠️ 종료할 워커 프로세스가 없습니다.")
 
-
 # ============================================================================
-# 통합 Polling 실행부
+# 폴링 실행
 # ============================================================================
 
 async def start_todolist_polling(interval: int = 7):
     """새 작업 처리 폴링 시작"""
     logger.info("🚀 TodoList 폴링 시작")
+    
     while True:
         try:
-            # database.fetch_pending_task 직접 호출
             bundle = await fetch_pending_task()
             if bundle:
                 await process_new_task(bundle)
+                
         except Exception as e:
-            logger.error(f"❌ TodoList 폴링 오류: {e}")
+            logger.error(f"❌ 폴링 실행 실패: {str(e)}")
+            logger.error(f"상세 정보: {traceback.format_exc()}")
+            
         await asyncio.sleep(interval)
