@@ -38,6 +38,8 @@ class SafeToolLoader:
 
     def create_tools_from_names(self, tool_names: List[str]) -> List:
         """tool_names 리스트에서 실제 Tool 객체들 생성"""
+        if isinstance(tool_names, str):
+            tool_names = [tool_names]
         logger.info(f"🔧 도구 생성 요청: {tool_names}")
         
         tools = []

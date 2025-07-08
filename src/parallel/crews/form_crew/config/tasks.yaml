@@ -3,11 +3,10 @@ generate_field_value:
     주어진 폼 키들에 대해 전문적이고 현실적인 값을 생성하세요.
     
     **입력 정보**:
-    - 리포트 내용: {report_content}
+    - 리포트 내용 또는 이전 작업 내용 : {report_content}
     - 워크플로우 단계: {topic}
     - 대상 폼 키들: {text_form_keys}
     - 사용자 정보: {user_info}
-    - 이전 작업 컨텍스트: {previous_context}
     
     **핵심 규칙**:
     1. **정확한 키 매칭**: text_form_keys에 지정된 키에 대해서만 값 생성

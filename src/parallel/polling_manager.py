@@ -52,11 +52,10 @@ def _handle_error(operation: str, error: Exception) -> None:
 # 작업 처리 메인 로직
 # ============================================================================
 
-async def process_new_task(bundle: Dict):
+async def process_new_task(row: Dict):
     """새 작업 처리"""
     global current_process, worker_terminated_by_us, current_todo_id
     
-    row, conn, cur = bundle['row'], bundle['connection'], bundle['cursor']
     current_todo_id = row['id']
     todo_id = row['id']
     proc_inst_id = row.get('proc_inst_id')
@@ -68,15 +67,14 @@ async def process_new_task(bundle: Dict):
         inputs = await _prepare_task_inputs(row)
         await _execute_worker_process(inputs, todo_id)
         
-        conn.commit()
-        
     except Exception as e:
         _handle_error("작업처리", e)
-        conn.rollback()
         
     finally:
-        # 자원 정리
-        _cleanup_resources(cur, conn)
+        # 글로벌 상태 초기화
+        current_process = None
+        worker_terminated_by_us = False
+        current_todo_id = None
 
 async def _prepare_task_inputs(row: Dict) -> Dict:
     """작업 입력 데이터 준비"""
@@ -100,18 +98,6 @@ async def _prepare_task_inputs(row: Dict) -> Dict:
         "agent_info": participants.get('agent_info', []),
         "form_types": form_types,
     }
-
-def _cleanup_resources(cur, conn):
-    """자원 정리"""
-    global current_process, worker_terminated_by_us, current_todo_id
-    
-    if cur:
-        cur.close()
-    if conn:
-        conn.close()
-    current_process = None
-    worker_terminated_by_us = False
-    current_todo_id = None
 
 # ============================================================================
 # 워커 프로세스 관리
@@ -194,9 +180,10 @@ async def start_todolist_polling(interval: int = 7):
     
     while True:
         try:
-            bundle = await fetch_pending_task()
-            if bundle:
-                await process_new_task(bundle)
+            row = await fetch_pending_task()
+            if row:
+                print("디버깅 row 정보", row)
+                await process_new_task(row)
                 
         except Exception as e:
             logger.error(f"❌ 폴링 실행 실패: {str(e)}")

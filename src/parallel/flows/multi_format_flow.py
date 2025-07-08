@@ -325,7 +325,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         """이전 컨텍스트 기반 텍스트 생성"""
         if self.state.execution_plan.text_phase.forms:
             form_keys = [form['key'] for form in self.state.execution_plan.text_phase.forms]
-            await self._generate_text_content(self.state.previous_context, form_keys)
+            # report_content 없이 이전 컨텍스트만 전달
+            await self._generate_text_content("", form_keys)
 
     async def _generate_text_content(self, content: str, form_keys: List[str]) -> None:
         """텍스트 내용 생성"""

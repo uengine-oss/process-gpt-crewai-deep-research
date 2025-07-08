@@ -93,7 +93,7 @@ class DynamicReportCrew:
         agent_role = self.agent_config.get("role", "Unknown Role")
         agent_goal = self.agent_config.get("goal", "Unknown Goal")
         agent_backstory = self.agent_config.get("persona", "Unknown Background")
-        llm_model = self.agent_config.get("model", "gpt-4.1")
+        llm_model = self.agent_config.get("model", "openai/gpt-4.1")
 
         logger.info(f"👤 Agent 생성: {len(self.actual_tools)}개 도구 할당")
         

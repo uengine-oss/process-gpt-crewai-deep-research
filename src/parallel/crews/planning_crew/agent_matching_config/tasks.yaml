@@ -21,6 +21,7 @@ design_activity_tasks:
     "중요" : 이전 컨텍스트에서 목차가 5개 미만인 경우, 그건 중간에 생성되다가 멈춘것으로 반드시 목차는 기본 값 5개입니다.
     !! 보고서는 논리적 흐름을 따라야 합니다: 도입부(배경 및 개요) → 본론(핵심 내용) → 마무리(요약 및 결론)
     !! 각 TOC 별로 빈값이 있으면 안됩니다. 반드시 올바른 매칭을 진행하세요.
+    !! 모든 agent의 정보는 전달된 agent_info 정보를 그대로 반환하세요. 변형 및 왜곡 금지입니다. 원본 그대로 반환하세요.
 
 
   expected_output: |
@@ -37,7 +38,7 @@ design_activity_tasks:
           "role": "원본 role",
           "goal": "원본 goal",
           "persona": "원본 persona",
-          "tool_names": "원본 tool_names (배열)",
+          "tool_names": "원본 tool_names (배열) (예: ['mem0', 'perplexity(mcp)'])",
           "agent_profile": "원본 agent_profile (예: /src/assets/images/profile/user-1.jpg)",
           "model": "원본 model"
         },

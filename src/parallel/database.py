@@ -6,276 +6,118 @@ import traceback
 from contextvars import ContextVar
 from typing import Optional, List, Dict, Any, Tuple
 from dotenv import load_dotenv
-import psycopg2
-from psycopg2.extras import RealDictCursor
 from supabase import create_client, Client
 
-# ============================================================================
-# 설정 및 초기화
-# ============================================================================
+# ============================================================================  
+# 설정 및 초기화  
+# ============================================================================  
 
-# DB 설정 보관용 ContextVar
-db_config_var = ContextVar('db_config', default={})
 supabase_client_var = ContextVar('supabase', default=None)
 
 def initialize_db():
-    """환경변수 로드 및 DB 설정 초기화"""
+    """환경변수 로드 및 Supabase 클라이언트 초기화"""
     try:
         if os.getenv("ENV") != "production":
             load_dotenv()
-            
-        # PostgreSQL 설정
-        db_config = {
-            "dbname": os.getenv("DB_NAME"),
-            "user": os.getenv("DB_USER"),
-            "password": os.getenv("DB_PASSWORD"),
-            "host": os.getenv("DB_HOST"),
-            "port": os.getenv("DB_PORT"),
-        }
-        db_config_var.set(db_config)
-        
-        # Supabase 설정
+
         supabase_url = os.getenv("SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_KEY")
+        if not supabase_url or not supabase_key:
+            raise RuntimeError("SUPABASE_URL 및 SUPABASE_KEY를 .env에 설정하세요.")
         supabase: Client = create_client(supabase_url, supabase_key)
         supabase_client_var.set(supabase)
-        
-    except Exception as e:
-        print(f"❌ DB 초기화 실패: {str(e)}")
-        print(f"상세 정보: {traceback.format_exc()}")
-        raise
 
-def _get_connection():
-    """DB 연결 생성"""
-    try:
-        config = db_config_var.get()
-        conn = psycopg2.connect(**config)
-        conn.autocommit = False
-        return conn
     except Exception as e:
-        print(f"❌ DB 연결 실패: {str(e)}")
+        print(f"❌ DB 초기화 실패: {e}")
         print(f"상세 정보: {traceback.format_exc()}")
         raise
 
 def _handle_db_error(operation: str, error: Exception) -> None:
     """통합 DB 에러 처리"""
-    error_msg = f"❌ [{operation}] DB 오류 발생: {str(error)}"
+    error_msg = f"❌ [{operation}] DB 오류 발생: {error}"
     print(error_msg)
     print(f"상세 정보: {traceback.format_exc()}")
     raise Exception(f"{operation} 실패: {error}")
 
-# ============================================================================
-# 작업 조회 및 상태 관리
-# ============================================================================
+# ============================================================================  
+# 작업 조회 및 상태 관리  
+# ============================================================================  
 
 async def fetch_pending_task(limit: int = 1) -> Optional[Dict[str, Any]]:
-    """대기중인 작업 조회 및 상태 업데이트"""
-    def _sync():
-        conn = None
-        cur = None
-        try:
-            conn = _get_connection()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            consumer_id = socket.gethostname()
-            
-            # 대기중인 작업 조회
-            cur.execute("""
-                SELECT * FROM todolist
-                WHERE status = 'IN_PROGRESS'
-                  AND (
-                    (agent_mode = 'DRAFT'
-                      AND (draft IS NULL OR draft::text = '' OR draft::text = 'EMPTY')
-                      AND draft_status IS NULL
-                    )
-                    OR draft_status = 'FB_REQUESTED'
-                  )
-                ORDER BY start_date ASC
-                LIMIT %s
-                FOR UPDATE SKIP LOCKED
-            """, (limit,))
-            
-            row = cur.fetchone()
-            if not row:
-                return None
-            
-            # 작업 상태 업데이트
-            cur.execute(
-                "UPDATE todolist SET draft_status = 'STARTED', consumer = %s WHERE id = %s",
-                (consumer_id, row['id'])
-            )
-            conn.commit()
-            
-            return {'row': row, 'connection': conn, 'cursor': cur}
-            
-        except Exception as e:
-            if conn:
-                conn.rollback()
-            if cur:
-                cur.close()
-            if conn:
-                conn.close()
-            _handle_db_error("작업조회", e)
-            
-    return await asyncio.to_thread(_sync)
+    """Supabase RPC로 대기중인 작업 조회 및 상태 업데이트"""
+    try:
+        supabase = supabase_client_var.get()
+        consumer_id = socket.gethostname()
+        resp = supabase.rpc(
+            'fetch_pending_task',
+            {'p_limit': limit, 'p_consumer': consumer_id}
+        ).execute()
+        rows = resp.data or []
+        return rows[0] if rows else None
+    except Exception as e:
+        _handle_db_error("작업조회", e)
 
 async def fetch_task_status(todo_id: int) -> Optional[str]:
-    """작업 상태 조회"""
-    def _sync():
-        conn = None
-        cur = None
-        try:
-            conn = _get_connection()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            
-            cur.execute(
-                "SELECT draft_status FROM todolist WHERE id = %s",
-                (todo_id,)
-            )
-            row = cur.fetchone()
-            
-            return row.get('draft_status') if row else None
-            
-        except Exception as e:
-            _handle_db_error("상태조회", e)
-        finally:
-            if cur:
-                cur.close()
-            if conn:
-                conn.close()
-                
-    return await asyncio.to_thread(_sync)
+    """Supabase 테이블 조회로 작업 상태 조회"""
+    try:
+        supabase = supabase_client_var.get()
+        resp = (
+            supabase
+            .table('todolist')
+            .select('draft_status')
+            .eq('id', todo_id)
+            .single()
+            .execute()
+        )
+        return resp.data.get('draft_status') if resp.data else None
+    except Exception as e:
+        _handle_db_error("상태조회", e)
 
-# ============================================================================
-# 완료된 데이터 조회
-# ============================================================================
+# ============================================================================  
+# 완료된 데이터 조회  
+# ============================================================================  
 
 async def fetch_done_data(proc_inst_id: Optional[str]) -> Tuple[List[Any], List[Any]]:
-    """완료된 작업들의 output 및 feedback 조회"""
-    def _sync():
-        outputs = []
-        feedbacks = []
-        
-        if not proc_inst_id:
-            return outputs, feedbacks
-            
-        conn = None
-        cur = None
-        try:
-            conn = _get_connection()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            
-            cur.execute("""
-                SELECT status, output, feedback, draft FROM todolist
-                WHERE proc_inst_id = %s
-                  AND (
-                    (status = 'DONE' AND output IS NOT NULL)
-                    OR (status = 'IN_PROGRESS' AND feedback IS NOT NULL)
-                  )
-                ORDER BY start_date ASC
-            """, (proc_inst_id,))
-            
-            rows = cur.fetchall()
-            print(f"✅ 완료데이터 조회 완료: {len(rows)}개")
-            
-            for row in rows:
-                output_data, feedback_data = _extract_row_data(row)
-                outputs.append(output_data)
-                feedbacks.append(feedback_data)
-                
-            return outputs, feedbacks
-            
-        except Exception as e:
-            _handle_db_error("완료데이터조회", e)
-        finally:
-            if cur:
-                cur.close()
-            if conn:
-                conn.close()
-                
-    return await asyncio.to_thread(_sync)
+    """Supabase RPC로 완료된 output 및 feedback 조회"""
+    if not proc_inst_id:
+        return [], []
+    try:
+        supabase = supabase_client_var.get()
+        resp = supabase.rpc(
+            'fetch_done_data',
+            {'p_proc_inst_id': proc_inst_id}
+        ).execute()
+        outputs, feedbacks = [], []
+        for row in resp.data or []:
+            outputs.append(row.get('output'))
+            feedbacks.append(row.get('feedback'))
+        return outputs, feedbacks
+    except Exception as e:
+        _handle_db_error("완료데이터조회", e)
 
-def _extract_row_data(row: Dict) -> Tuple[Any, Any]:
-    """행 데이터에서 output과 feedback 추출"""
-    status = row.get('status')
-    feedback = row.get('feedback')
-    
-    if status == 'IN_PROGRESS' and feedback is not None:
-        draft = row.get('draft')
-        return _parse_draft_data(draft), feedback
-    else:
-        return row.get('output'), feedback
-
-def _parse_draft_data(draft: Any) -> Any:
-    """draft 데이터 파싱"""
-    if isinstance(draft, str):
-        try:
-            parsed = json.loads(draft)
-            return parsed.get('reports')
-        except Exception:
-            return draft
-    elif isinstance(draft, dict):
-        return draft.get('reports')
-    else:
-        return draft
-
-# ============================================================================
-# 결과 저장
-# ============================================================================
+# ============================================================================  
+# 결과 저장  
+# ============================================================================  
 
 async def save_task_result(todo_id: int, result: Any, final: bool = False) -> None:
-    """작업 결과 저장"""
+    """Supabase RPC로 작업 결과 저장 호출"""
     def _sync():
-        conn = None
-        cur = None
         try:
-            conn = _get_connection()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            
-            payload = json.dumps(result, ensure_ascii=False)
-            
-            # 기존 agent_mode 조회
-            cur.execute("SELECT agent_mode FROM todolist WHERE id = %s", (todo_id,))
-            row = cur.fetchone() or {}
-            mode = row.get('agent_mode')
-            
-            if final:
-                _save_final_result(cur, todo_id, payload, mode)
-            else:
-                _save_intermediate_result(cur, todo_id, payload)
-                
-            conn.commit()
-            
+            supabase = supabase_client_var.get()
+            # 이미 dict/list면 그대로, 아니면 JSON 직렬화
+            payload = result if isinstance(result, (dict, list)) else json.loads(json.dumps(result))
+            supabase.rpc(
+                'save_task_result',
+                {
+                    'p_todo_id': todo_id,
+                    'p_payload': payload,
+                    'p_final':   final
+                }
+            ).execute()
         except Exception as e:
-            if conn:
-                conn.rollback()
             _handle_db_error("결과저장", e)
-        finally:
-            if cur:
-                cur.close()
-            if conn:
-                conn.close()
-                
+
     await asyncio.to_thread(_sync)
-
-def _save_final_result(cur, todo_id: int, payload: str, mode: str) -> None:
-    """최종 결과 저장"""
-    if mode == 'COMPLETE':
-        cur.execute(
-            "UPDATE todolist SET output=%s, draft=%s, status='SUBMITTED', draft_status='COMPLETED', consumer = %s WHERE id = %s",
-            (payload, payload, None, todo_id)
-        )
-    else:
-        cur.execute(
-            "UPDATE todolist SET draft=%s, draft_status='COMPLETED', consumer = %s WHERE id = %s",
-            (payload, None, todo_id)
-        )
-
-def _save_intermediate_result(cur, todo_id: int, payload: str) -> None:
-    """중간 결과 저장"""
-    cur.execute(
-        "UPDATE todolist SET draft=%s WHERE id = %s",
-        (payload, todo_id)
-    )
 
 # ============================================================================
 # 사용자 및 에이전트 정보 조회 (Supabase)
