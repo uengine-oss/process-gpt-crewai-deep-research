@@ -10,12 +10,7 @@ from ...context_manager import set_crew_context, reset_crew_context
 # ============================================================================
 
 # 로거 설정
-logger = logging.getLogger("execution_planning_crew")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 def _handle_error(operation: str, error: Exception) -> None:
     """통합 에러 처리"""

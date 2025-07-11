@@ -19,12 +19,7 @@ from .database import (
 # 설정 및 초기화
 # ============================================================================
 
-logger = logging.getLogger("polling_manager")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 글로벌 상태
 current_todo_id: Optional[int] = None

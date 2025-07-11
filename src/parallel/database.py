@@ -165,14 +165,15 @@ def _get_user_by_email(supabase: Client, user_id: str) -> Optional[Dict]:
         user = resp.data[0]
         return {
             'email': user.get('email'),
-            'name': user.get('username')
+            'name': user.get('username'),
+            'tenant_id': user.get('tenant_id')
         }
     return None
 
 def _get_agent_by_id(supabase: Client, user_id: str) -> Optional[Dict]:
     """ID로 에이전트 조회"""
     resp = supabase.table('users').select(
-        'id, username, role, goal, persona, tools, profile, is_agent, model'
+        'id, username, role, goal, persona, tools, profile, is_agent, model, tenant_id'
     ).eq('id', user_id).execute()
     
     if resp.data and resp.data[0].get('is_agent'):
@@ -185,7 +186,8 @@ def _get_agent_by_id(supabase: Client, user_id: str) -> Optional[Dict]:
             'persona': agent.get('persona'),
             'tools': agent.get('tools'),
             'profile': agent.get('profile'),
-            'model': agent.get('model')
+            'model': agent.get('model'),
+            'tenant_id': agent.get('tenant_id')
         }
     return None
 
@@ -234,17 +236,30 @@ async def fetch_all_agents() -> List[Dict[str, Any]]:
         try:
             supabase = supabase_client_var.get()
             
-            # is_agent=True인 에이전트만 조회
-            resp = supabase.table('users').select('*').eq('is_agent', True).execute()
-            agents = resp.data or []
-            
-            # tools 기본값 설정
-            for agent in agents:
-                if not agent.get('tools'):
-                    agent['tools'] = 'mem0'
-            
-            print(f"✅ 에이전트 {len(agents)}개 조회 완료")
-            return agents
+            resp = (
+                supabase
+                .table('users')
+                .select('id, username, role, goal, persona, tools, profile, model, tenant_id')
+                .eq('is_agent', True)
+                .execute()
+            )
+            rows = resp.data or []
+            normalized = []
+            for row in rows:
+                tools_val = row.get('tools') or 'mem0'
+                normalized.append({
+                    'id': row.get('id'),
+                    'name': row.get('username'),
+                    'role': row.get('role'),
+                    'goal': row.get('goal'),
+                    'persona': row.get('persona'),
+                    'tools': tools_val,
+                    'profile': row.get('profile'),
+                    'model': row.get('model'),
+                    'tenant_id': row.get('tenant_id')
+                })
+            print(f'✅ 에이전트 {len(normalized)}개 조회 완료')
+            return normalized
             
         except Exception as e:
             print(f"❌ 에이전트 조회 실패: {str(e)}")

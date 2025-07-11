@@ -145,7 +145,25 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         
         raw_text = getattr(result, 'raw', result)
         cleaned_text = clean_json_response(raw_text)
-        return json.loads(cleaned_text)
+        sections = json.loads(cleaned_text)
+
+        for sec in sections:
+            agent_ref = sec.get('agent', {}) or {}
+            agent_id = agent_ref.get('agent_id')
+            full_agent = next((a for a in agents if a['id'] == agent_id), None)
+            if full_agent:
+                sec['agent'] = {
+                    'agent_id': full_agent['id'],
+                    'name': full_agent['name'],
+                    'role': full_agent['role'],
+                    'goal': full_agent['goal'],
+                    'persona': full_agent['persona'],
+                    'tool_names': full_agent['tools'],
+                    'agent_profile': full_agent['profile'],
+                    'model': full_agent['model'],
+                    'tenant_id': full_agent['tenant_id']
+                }
+        return sections
 
     async def _generate_section_contents(self, report_key: str, sections: List[Dict[str, Any]]) -> None:
         """섹션별 내용 비동기 생성"""

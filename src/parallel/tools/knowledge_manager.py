@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 from crewai.tools import BaseTool
 from dotenv import load_dotenv
 from mem0 import Memory
+import requests
 
 # ============================================================================
 # 설정 및 초기화
@@ -14,12 +15,7 @@ from mem0 import Memory
 load_dotenv()
 
 # 로거 설정
-logger = logging.getLogger("knowledge_manager")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 데이터베이스 연결 정보
 DB_USER = os.getenv("DB_USER")
@@ -63,7 +59,6 @@ class Mem0Tool(BaseTool):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._memory = self._initialize_memory()
-        logger.info("✅ Mem0Tool 초기화 완료")
 
     def _initialize_memory(self) -> Memory:
         """Memory 인스턴스 초기화"""
@@ -112,3 +107,45 @@ class Mem0Tool(BaseTool):
             items.append(f"지식 {idx} (관련도: {score:.2f})\n{memory_text}")
         
         return "\n\n".join(items)
+
+# ============================================================================
+# 사내 문서 검색 (memento) 도구
+# ============================================================================
+
+class MementoQuerySchema(BaseModel):
+    query: str = Field(..., description="검색 키워드 또는 질문")
+    tenant_id: str = Field("localhost", description="테넌트 식별자 (기본값 localhost)")
+
+class MementoTool(BaseTool):
+    """사내 문서 검색을 수행하는 도구"""
+    name: str = "memento"
+    description: str = "사내 문서 검색을 위한 도구"
+    args_schema: Type[MementoQuerySchema] = MementoQuerySchema
+
+    def _run(self, query: str, tenant_id: str = "localhost") -> str:
+        try:
+            logger.info(f"🔍 Memento 문서 검색 시작: tenant_id='{tenant_id}', query='{query}'")
+
+            response = requests.post(
+                # "http://memento.process-gpt.io/retrieve",
+                "http://localhost:8005/retrieve",
+                json={"query": query, "options": {"tenant_id": tenant_id}}
+            )
+            if response.status_code != 200:
+                return f"API 오류: {response.status_code}"
+            data = response.json()
+            if not data.get("response"):
+                return f"테넌트 '{tenant_id}'에서 '{query}' 검색 결과가 없습니다."
+            results = []
+            # 검색 결과 로그 출력
+            docs = data.get("response", [])
+            logger.info(f"🔍 Memento 검색 결과 개수: {len(docs)}")
+            for doc in docs:
+                fname = doc.get('metadata', {}).get('file_name', 'unknown')
+                idx = doc.get('metadata', {}).get('chunk_index', 'unknown')
+                content = doc.get('page_content', '')
+                logger.info(f"📄 문서: {fname}, 청크: {idx}, 내용: {content[:100]}...")
+                results.append(f"📄 파일: {fname} (청크 #{idx})\n내용: {content}\n---")
+            return f"테넌트 '{tenant_id}'에서 '{query}' 검색 결과:\n\n" + "\n".join(results)
+        except Exception as e:
+            return f"검색 중 오류 발생: {e}"

@@ -34,13 +34,7 @@ design_activity_tasks:
          },
         "agent": {
           "agent_id": "원본 agent_id",
-          "name": "원본 name", 
-          "role": "원본 role",
-          "goal": "원본 goal",
-          "persona": "원본 persona",
-          "tool_names": "원본 tool_names (배열) (예: ['mem0', 'perplexity(mcp)'])",
-          "agent_profile": "원본 agent_profile (예: /src/assets/images/profile/user-1.jpg)",
-          "model": "원본 model"
+          "name": "원본 name"
         },
         "task": {
            "description": "이전 컨텍스트와 피드백을 반영한 구체적 작업 지시. 원래 요구사항 최우선, 에이전트 전문성 활용, Markdown 형식",
@@ -49,6 +43,6 @@ design_activity_tasks:
       }
     ]
     
-    **필수 사항**: agent_info 에이전트들 반드시 포함, 에이전트 정본 원본 그대로 반환, 값 없는 필드는 빈 문자열("")
+    **필수 사항**: agent_info 에이전트들 반드시 포함, 에이전트 정본 원본 그대로 반환
 
   agent: toc_generator_and_agent_matcher 

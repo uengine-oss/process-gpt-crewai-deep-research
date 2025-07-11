@@ -8,14 +8,7 @@ from ...context_manager import set_crew_context, reset_crew_context
 # ============================================================================
 # 설정 및 초기화
 # ============================================================================
-
-# 로거 설정
-logger = logging.getLogger("dynamic_report_crew")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 def _handle_error(operation: str, error: Exception) -> None:
     """통합 에러 처리"""
@@ -33,6 +26,7 @@ class AgentWithProfile(Agent):
     profile: Optional[str] = None
     user_id: Optional[str] = None
     name: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 # ============================================================================
 # DynamicReportCrew 클래스
@@ -55,11 +49,6 @@ class DynamicReportCrew:
         self.tool_names = self.agent_config.get('tool_names', [])
         self.actual_tools = self.safe_tool_loader.create_tools_from_names(self.tool_names)
         
-        # 초기화 로그
-        agent_name = self.agent_config.get('name', 'Unknown')
-        agent_role = self.agent_config.get('role', 'Unknown')
-        logger.info(f"📋 매칭된 에이전트: {agent_name} ({agent_role})")
-        logger.info(f"🔧 생성된 도구: {len(self.actual_tools)}개")
 
     def create_crew(self) -> Crew:
         """동적으로 Crew 생성"""
@@ -111,6 +100,7 @@ class DynamicReportCrew:
         agent.profile = self.agent_config.get('agent_profile', '')
         agent.user_id = self.agent_config.get('agent_id', '')
         agent.name = self.agent_config.get('name', '')
+        agent.tenant_id = self.agent_config.get('tenant_id', '')
         
         return agent
 
@@ -123,7 +113,7 @@ class DynamicReportCrew:
         context_info = self._build_context_info()
         
         # 작업 지침 구성
-        safe_description = self._build_task_description(base_description, context_info, agent.user_id)
+        safe_description = self._build_task_description(base_description, context_info, agent.user_id, agent.tenant_id)
         enhanced_expected_output = self._build_expected_output(expected_output)
         
         return Task(
@@ -144,11 +134,12 @@ class DynamicReportCrew:
         context_str = str(self.previous_context)
         return f"\n\n[이전 작업 컨텍스트]\n{context_str}"
 
-    def _build_task_description(self, base_description: str, context_info: str, user_id: str) -> str:
+    def _build_task_description(self, base_description: str, context_info: str, user_id: str, tenant_id: str) -> str:
         """작업 설명 구성"""
         return base_description + context_info + f"""
         
         user_id = "{user_id}"
+        tenant_id = "{tenant_id}"
 
         **📋 작업 원칙:**
         1. **피드백 절대 반영**: 이전 컨텍스트의 피드백이 특정 에이전트 대상인지 전역적인지 구분하여 반드시 적용
@@ -157,15 +148,17 @@ class DynamicReportCrew:
         4. **이전 결과 활용**: 이전 단계에서 생성된 결과물과 자연스럽게 연결되는 내용 구성
 
         **🔍 도구 사용 지침:**
-        - **user_id 필수 사용**: "{user_id}"를 모든 도구 호출 시 전달
-        - **mem0 필수 조회**: mem0(user_id="{user_id}", query="섹션: {self.section_title} 관련 배경지식")로 시작
+        - **mem0 필수 조회**: mem0(user_id="{user_id}", query="OO을 위한 배경지식")로 시작
         - **perplexity 보완**: 필요시 perplexity 도구로 최신 정보 보완
+        - **memento 내부 문서 검색**: memento(query="OO 내부 문서를 참고", tenant_id="{tenant_id}")로 사내 문서를 검색하여 추가 정보 보강
         - **query 명확성**: 구체적이고 명확한 검색어 사용 (null/빈값 금지)
         - **URL 접속 금지**: 웹사이트 직접 접속이나 임의 주소 생성 금지
+        - **출처 표기**: 출처 표기 필수 (어떤 정보로 부터 참고했는지 출처를 명시, 어떤 문서로 부터 참고했는지 출처를 명시)
 
         **📊 내용 구성 원칙:**
+        - 도구의 사용 결과가 없어도, 이전 컨텍스트와 피드백을 우선적으로 반영하여 창의적으로 내용을 작성
         - 이전 컨텍스트와 피드백을 우선적으로 반영하여 내용 작성
-        - 도구 정보에만 의존하지 말고 전문가적 관점에서 창의적 작성
+        - 도구 정보 결과에만 의존하지 말고 전문가적 관점에서 창의적 작성
         - 현재 섹션의 목적에 맞는 심층적이고 실무적인 내용 제공
         - 업계 표준과 모범 사례를 활용한 완성도 높은 결과물 작성
         """

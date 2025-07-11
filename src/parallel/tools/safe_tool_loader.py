@@ -11,12 +11,7 @@ from pathlib import Path
 # ============================================================================
 
 # 로거 설정
-logger = logging.getLogger("safe_tool_loader")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 def _handle_error(operation: str, error: Exception) -> List:
     """통합 에러 처리"""
@@ -33,7 +28,7 @@ class SafeToolLoader:
     """도구 이름만 관리하는 간소화된 로더"""
     
     def __init__(self):
-        self.allowed_tools = ["mem0", "perplexity(mcp)"]
+        self.allowed_tools = ["mem0", "perplexity(mcp)", "memento"]
         logger.info(f"✅ SafeToolLoader 초기화 완료 (허용 도구: {self.allowed_tools})")
 
     def create_tools_from_names(self, tool_names: List[str]) -> List:
@@ -44,13 +39,14 @@ class SafeToolLoader:
         
         tools = []
         
-        # mem0는 항상 기본 로드
+        # mem0, memento는 항상 기본 로드
         tools.extend(self._load_mem0())
+        tools.extend(self._load_search_internal_documents())
         
         # 요청된 도구들 처리
         for name in tool_names:
             key = name.strip().lower()
-            if key == "mem0":
+            if key in ("mem0", "memento"):
                 continue
             elif key == "perplexity":
                 tools.extend(self._load_perplexity())
@@ -100,6 +96,15 @@ class SafeToolLoader:
         except Exception as e:
             return _handle_error("perplexity(mcp) 로드", e)
 
+    def _load_search_internal_documents(self) -> List:
+        """사내 문서 검색 도구 로드"""
+        try:
+            from .knowledge_manager import MementoTool
+            logger.info("✅ memento 도구 로드 성공")
+            return [MementoTool()]
+        except Exception as e:
+            return _handle_error("memento 로드", e)
+
     # ============================================================================
     # 헬퍼 메서드들
     # ============================================================================
@@ -121,7 +126,6 @@ class SafeToolLoader:
     def _get_mcp_config_path(self) -> Path:
         """MCP 설정 파일 경로 반환"""
         config_path = Path(__file__).resolve().parents[3] / "config" / "mcp.json"
-        logger.info(f"📄 mcp.json 경로: {config_path}")
         return config_path
 
     def _load_mcp_config(self, config_path: Path) -> dict:

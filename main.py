@@ -15,6 +15,15 @@ def print(*args, **kwargs):
     _orig_print(*args, **kwargs)
 builtins.print = print
 
+
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+
 # 특정 경고 메시지 필터링
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="qdrant_client.*")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="websockets.*")
