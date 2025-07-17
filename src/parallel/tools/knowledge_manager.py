@@ -87,6 +87,18 @@ class Mem0Tool(BaseTool):
             results = self._memory.search(query, user_id=user_id)
             hits = results.get("results", [])
             
+            # hybrid 필터링 적용: threshold=0.6, 최소 5개 보장
+            THRESHOLD = 0.6
+            MIN_RESULTS = 5
+            # 1) 유사도 내림차순 정렬
+            hits_sorted = sorted(hits, key=lambda x: x.get("score", 0), reverse=True)
+            # 2) Threshold 이상 항목 필터
+            filtered_hits = [h for h in hits_sorted if h.get("score", 0) >= THRESHOLD]
+            # 3) 최소 개수 보장
+            if len(filtered_hits) < MIN_RESULTS:
+                filtered_hits = hits_sorted[:MIN_RESULTS]
+            hits = filtered_hits
+
             logger.info(f"📋 검색 결과: {len(hits)}개 항목 발견")
             
             # 결과 처리

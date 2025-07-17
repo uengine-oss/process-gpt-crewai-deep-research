@@ -195,8 +195,8 @@ def _get_agent_by_id(supabase: Client, user_id: str) -> Optional[Dict]:
 # 폼 타입 조회 (Supabase)
 # ============================================================================
 
-async def fetch_form_types(tool_val: str) -> List[Dict]:
-    """폼 타입 정보 조회 및 정규화"""
+async def fetch_form_types(tool_val: str) -> Tuple[str, List[Dict]]:
+    """폼 타입 정보 조회 및 정규화 - form_id와 form_types 함께 반환"""
     def _sync():
         try:
             form_id = tool_val[12:] if tool_val.startswith('formHandler:') else tool_val
@@ -206,7 +206,7 @@ async def fetch_form_types(tool_val: str) -> List[Dict]:
             fields_json = resp.data[0].get('fields_json') if resp.data else None
             
             if not fields_json:
-                return [{'id': form_id, 'type': 'default'}]
+                return form_id, [{'id': form_id, 'type': 'default'}]
             
             form_types = []
             for field in fields_json:
@@ -219,7 +219,7 @@ async def fetch_form_types(tool_val: str) -> List[Dict]:
                     'text': field.get('text', '')
                 })
             
-            return form_types
+            return form_id, form_types
             
         except Exception as e:
             _handle_db_error("폼타입조회", e)

@@ -9,7 +9,7 @@ BEGIN
     WITH cte AS (
       SELECT *
         FROM todolist
-       WHERE status = 'IN_PROGRESS'
+       WHERE status = 'IN_PROGRESS' AND agent_orch = 'crewai'
          AND (
            (agent_mode = 'DRAFT' AND draft IS NULL AND draft_status IS NULL)
            OR draft_status = 'FB_REQUESTED'

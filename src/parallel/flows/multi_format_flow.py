@@ -17,7 +17,6 @@ from ..database import save_task_result, fetch_all_agents
 
 class Phase(BaseModel):
     forms: List[Dict[str, Any]] = Field(default_factory=list)
-    strategy: Optional[str] = None
 
 class ExecutionPlan(BaseModel):
     report_phase: Phase = Field(default_factory=Phase)
@@ -38,6 +37,7 @@ class MultiFormatState(BaseModel):
     proc_inst_id: Optional[str] = None
     agent_info: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
     previous_context: str = ""
+    proc_form_id: Optional[str] = None
 
 # ============================================================================
 # 유틸리티 함수
@@ -208,7 +208,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         # 병합 시작 이벤트
         self.event_logger.emit_event(
             event_type="task_started",
-            data={"role": "리포트 통합 전문가", "goal": "섹션을 하나의 완전한 문서로 병합"},
+            data={"role": "리포트 통합 전문가", "goal": "섹션을 하나의 완전한 문서로 병합", "agent_profile": "/images/chat-icon.png", "name": "리포트 통합 전문가"},
             job_id=f"merge-{report_key}",
             crew_type="report",
             todo_id=self.state.todo_id,
@@ -247,8 +247,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         
         self.state.report_contents[report_key] = merged_content
         
-        if self.state.todo_id and self.state.proc_inst_id and self.state.report_contents:
-            result = {self.state.proc_inst_id: self.state.report_contents}
+        if self.state.todo_id and self.state.proc_form_id and self.state.report_contents:
+            result = {self.state.proc_form_id: self.state.report_contents}
             await save_task_result(self.state.todo_id, result)
 
     # ============================================================================
@@ -398,7 +398,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
                 }
                 
                 if all_results:
-                    final_result = {self.state.proc_inst_id: all_results}
+                    final_result = {self.state.proc_form_id: all_results}
                     await save_task_result(self.state.todo_id, final_result, final=True)
                     
                     # 처리 결과 출력
