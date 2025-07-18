@@ -209,7 +209,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         self.event_logger.emit_event(
             event_type="task_started",
             data={"role": "리포트 통합 전문가", "goal": "섹션을 하나의 완전한 문서로 병합", "agent_profile": "/images/chat-icon.png", "name": "리포트 통합 전문가"},
-            job_id=f"merge-{report_key}",
+            job_id=f"final_report_merge_{report_key}",
             crew_type="report",
             todo_id=self.state.todo_id,
             proc_inst_id=self.state.proc_inst_id
@@ -229,7 +229,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         self.event_logger.emit_event(
             event_type="task_completed",
             data={"final_result": merged_content},
-            job_id=f"merge-{report_key}",
+            job_id=f"final_report_merge_{report_key}",
             crew_type="report",
             todo_id=self.state.todo_id,
             proc_inst_id=self.state.proc_inst_id,
