@@ -14,6 +14,7 @@ from .database import (
     fetch_participants_info,
     fetch_form_types
 )
+from .settings.crew_event_logger import CrewAIEventLogger
 
 # ============================================================================
 # 설정 및 초기화
@@ -82,7 +83,10 @@ async def _prepare_task_inputs(row: Dict) -> Dict:
     
     # 사용자 및 폼 정보 조회
     participants = await fetch_participants_info(row.get('user_id', ''))
-    proc_form_id, form_types = await fetch_form_types(row.get('tool', ''))
+    proc_form_id, form_types = await fetch_form_types(
+        row.get('tool', ''),
+        str(row.get('tenant_id', ''))
+    )
     
     return {
         "todo_id": todo_id,
@@ -120,6 +124,17 @@ async def _execute_worker_process(inputs: Dict, todo_id: int):
         if not watch_task.done():
             watch_task.cancel()
         
+        # 정상 종료 시 crew_completed 이벤트 중앙 발행
+        ev = CrewAIEventLogger()
+        ev.emit_event(
+            event_type="crew_completed",
+            data={},
+            job_id="CREW_FINISHED",
+            crew_type="crew",
+            todo_id=todo_id,
+            proc_inst_id=inputs.get("proc_inst_id")
+        )
+    
         # 종료 결과 로그
         _log_worker_result()
         

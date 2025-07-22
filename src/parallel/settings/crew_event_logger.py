@@ -6,43 +6,24 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import logging
 
-from dotenv import load_dotenv
-from supabase import create_client, Client
+from ..database import initialize_db, get_db_client
 from ..context_manager import crew_type_var, todo_id_var, proc_id_var, form_id_var
 
 # ============================================================================
 # 초기화 및 설정
 # ============================================================================
 
-load_dotenv()
 logger = logging.getLogger(__name__)
 
 class CrewAIEventLogger:
     """CrewAI 이벤트 로깅 시스템 - Supabase 전용"""
     def __init__(self):
         """이벤트 로거 초기화"""
-        self.supabase_client = self._init_supabase()
+        # DB 싱글턴 초기화 및 클라이언트 가져오기
+        initialize_db()
+        self.supabase_client = get_db_client()
         logger.info("🎯 CrewAI Event Logger 초기화 완료")
-        print(f"   - Supabase: {'✅' if self.supabase_client else '❌'}")
-
-    def _init_supabase(self) -> Optional[Client]:
-        """Supabase 클라이언트 초기화"""
-        try:
-            url = os.getenv("SUPABASE_URL")
-            key = os.getenv("SUPABASE_KEY")
-            
-            if not url or not key:
-                logger.warning("⚠️ Supabase 자격증명 누락")
-                return None
-            
-            client = create_client(url, key)
-            logger.info("✅ Supabase 연결 성공")
-            return client
-            
-        except Exception as e:
-            logger.error(f"❌ Supabase 연결 실패: {str(e)}")
-            logger.error(f"상세 정보: {traceback.format_exc()}")
-            return None
+        print("   - Supabase: ✅")
 
     # ============================================================================
     # 유틸리티 함수

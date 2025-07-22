@@ -407,15 +407,5 @@ class MultiFormatFlow(Flow[MultiFormatState]):
                     text_count = len(self.state.text_contents)
                     print(f"📊 처리 결과: 리포트 {report_count}개, 슬라이드 {slide_count}개, 텍스트 {text_count}개")
 
-            # 완료 이벤트 발행
-            self.event_logger.emit_event(
-                event_type="crew_completed",
-                data={},
-                job_id="CREW_FINISHED",
-                crew_type="crew",
-                todo_id=self.state.todo_id,
-                proc_inst_id=self.state.proc_inst_id
-            )
-            
         except Exception as e:
             self._handle_error("최종결과저장", e)
