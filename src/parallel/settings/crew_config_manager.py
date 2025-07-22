@@ -3,7 +3,7 @@ from crewai.utilities.events import CrewAIEventsBus
 from crewai.utilities.events.task_events import TaskStartedEvent, TaskCompletedEvent
 from crewai.utilities.events.agent_events import AgentExecutionStartedEvent, AgentExecutionCompletedEvent
 from crewai.utilities.events import ToolUsageStartedEvent, ToolUsageFinishedEvent, LLMCallStartedEvent, LLMCallCompletedEvent
-from . import CrewAIEventLogger
+from .crew_event_logger import CrewAIEventLogger
 from ..crews.planning_crew.ExecutionPlanningCrew import ExecutionPlanningCrew
 from ..crews.planning_crew.AgentMatchingCrew import AgentMatchingCrew
 from ..crews.form_crew.FormCrew import FormCrew
