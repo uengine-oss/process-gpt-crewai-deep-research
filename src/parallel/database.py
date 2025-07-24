@@ -219,8 +219,9 @@ async def fetch_form_types(tool_val: str, tenant_id: str) -> Tuple[str, List[Dic
                 .eq('tenant_id', tenant_id)
                 .execute()
             )
+            print(f'✅ 폼 타입 조회 완료: {resp}')
             fields_json = resp.data[0].get('fields_json') if resp.data else None
-            
+            print(f'✅ 폼 타입 조회 완료: {fields_json}')
             if not fields_json:
                 return form_id, [{'id': form_id, 'type': 'default'}]
             
@@ -282,4 +283,4 @@ async def fetch_all_agents() -> List[Dict[str, Any]]:
             print(f"상세 정보: {traceback.format_exc()}")
             return []
             
-    return await asyncio.to_thread(_sync)
+    return await asyncio.to_thread(_sync) 

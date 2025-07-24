@@ -134,7 +134,7 @@ async def _execute_worker_process(inputs: Dict, todo_id: int):
             todo_id=todo_id,
             proc_inst_id=inputs.get("proc_inst_id")
         )
-    
+        
         # 종료 결과 로그
         _log_worker_result()
         
