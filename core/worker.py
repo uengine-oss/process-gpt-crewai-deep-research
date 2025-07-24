@@ -15,7 +15,7 @@ sys.path.append(
 )
 
 from flows.multi_format_flow import MultiFormatFlow
-from .database import initialize_db
+from core.database import initialize_db
 
 async def main_async(inputs: dict):
     """

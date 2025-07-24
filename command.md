@@ -36,6 +36,7 @@ kubectl get pods -l app=agent-monitoring
 uv run main.py > output.log 2>&1
 kubectl logs -f agent-monitoring-deployment-69699c5bc9-gl4kv > output.log 2>&1
 kubectl logs -f agent-monitoring-deployment-prod-686955c4df-zt4k4 > output.log 2>&1
+python main.py > output.log 2>&1
 
 uv venv
 uv pip install -r requirements.txt

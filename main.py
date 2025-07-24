@@ -68,8 +68,6 @@ app.add_middleware(
     allow_headers=["*"],  # 모든 HTTP 헤더 허용
 )
 
-# 라우터 추가
-add_routes_to_app(app)
 
 if __name__ == "__main__":
     import uvicorn
