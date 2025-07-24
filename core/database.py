@@ -58,7 +58,7 @@ async def fetch_pending_task(limit: int = 1) -> Optional[Dict[str, Any]]:
         supabase = get_db_client()
         consumer_id = socket.gethostname()
         resp = supabase.rpc(
-            'fetch_pending_task',
+            'crewai_deep_fetch_pending_task',
             {'p_limit': limit, 'p_consumer': consumer_id}
         ).execute()
         rows = resp.data or []

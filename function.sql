@@ -1,5 +1,5 @@
 -- 1) 대기중인 작업 조회 및 상태 변경
-CREATE OR REPLACE FUNCTION public.fetch_pending_task(
+CREATE OR REPLACE FUNCTION public.crewai_deep_fetch_pending_task(
   p_limit    integer,
   p_consumer text
 )
@@ -9,7 +9,7 @@ BEGIN
     WITH cte AS (
       SELECT *
         FROM todolist
-       WHERE status = 'IN_PROGRESS' AND agent_orch = 'crewai'
+       WHERE status = 'IN_PROGRESS' AND agent_orch = 'crewai-deep-research'
          AND (
            (agent_mode IN ('DRAFT','COMPLETE') AND draft IS NULL AND draft_status IS NULL)
            OR draft_status = 'FB_REQUESTED'
@@ -89,6 +89,6 @@ END;
 $$ LANGUAGE plpgsql VOLATILE;
 
 -- 익명(anon) 역할에 실행 권한 부여
-GRANT EXECUTE ON FUNCTION public.fetch_pending_task(integer, text) TO anon;
+GRANT EXECUTE ON FUNCTION public.crewai_deep_fetch_pending_task(integer, text) TO anon;
 GRANT EXECUTE ON FUNCTION public.fetch_done_data(text) TO anon;
 GRANT EXECUTE ON FUNCTION public.save_task_result(uuid, jsonb, boolean) TO anon;
