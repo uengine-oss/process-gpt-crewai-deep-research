@@ -41,8 +41,7 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from router import add_routes_to_app
-from src.parallel.polling_manager import start_todolist_polling, initialize_connections
+from core.polling_manager import start_todolist_polling, initialize_connections
 
 # 백그라운드 태스크 관리를 위한 lifespan 함수
 @asynccontextmanager
