@@ -1,4 +1,4 @@
-name: crewai-deep-research-build-and-deploy-prod
+name: process-gpt-build-and-deploy
 
 on:
   release:
@@ -60,7 +60,7 @@ jobs:
 
       - name: Create deployment summary
         run: |
-          echo "## 🚀 CrewAI Deep Research Production Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Production Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
@@ -86,7 +86,7 @@ jobs:
             while (attempt < maxRetries) {
               try {
                 const commentBody = [
-                  '🚀 **CrewAI Deep Research PRODUCTION Deployment Started**',
+                  '🚀 **PRODUCTION Deployment Started**',
                   '',
                   '**Environment:** PRODUCTION',
                   '**Image:** `${{ env.IMAGE_NAME }}`',
