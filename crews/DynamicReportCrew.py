@@ -44,8 +44,10 @@ class DynamicReportCrew:
         self.task_config = section_data.get("task", {})
         self.section_title = self.toc_info.get("title", "Unknown Section")
         
-        # 도구 로더 초기화
-        self.safe_tool_loader = SafeToolLoader()
+        # 도구 로더 초기화 (tenant_id, user_id 전달)
+        tenant_id = self.agent_config.get('tenant_id', 'localhost')
+        user_id = self.agent_config.get('agent_id', '')
+        self.safe_tool_loader = SafeToolLoader(tenant_id=tenant_id, user_id=user_id)
         self.tool_names = self.agent_config.get('tool_names', [])
         self.actual_tools = self.safe_tool_loader.create_tools_from_names(self.tool_names)
         
@@ -137,9 +139,6 @@ class DynamicReportCrew:
     def _build_task_description(self, base_description: str, context_info: str, user_id: str, tenant_id: str) -> str:
         """작업 설명 구성"""
         return base_description + context_info + f"""
-        
-        user_id = "{user_id}"
-        tenant_id = "{tenant_id}"
 
         **📋 작업 원칙:**
         1. **피드백 절대 반영**: 이전 컨텍스트의 피드백이 특정 에이전트 대상인지 전역적인지 구분하여 반드시 적용
@@ -148,9 +147,9 @@ class DynamicReportCrew:
         4. **이전 결과 활용**: 이전 단계에서 생성된 결과물과 자연스럽게 연결되는 내용 구성
 
         **🔍 도구 사용 지침:**
-        - **mem0 필수 조회**: mem0(user_id="{user_id}", query="현재 작성할 섹션과 관련된 구체적 정보")로 시작 - 작성할 내용에 필요한 정보를 동적으로 검색
+        - **mem0 필수 조회**: mem0(query="현재 작성할 섹션과 관련된 구체적 정보")로 시작 - 작성할 내용에 필요한 정보를 동적으로 검색
         - **perplexity 보완**: 필요시 perplexity 도구로 최신 정보 보완
-        - **memento 내부 문서 검색**: memento(query="OO 내부 문서를 참고", tenant_id="{tenant_id}")로 사내 문서를 검색하여 추가 정보 보강
+        - **memento 내부 문서 검색**: memento(query="OO 내부 문서를 참고")로 사내 문서를 검색하여 추가 정보 보강
         - **query 명확성**: 구체적이고 명확한 검색어 사용 ⚠️ CRITICAL: null, 빈값, 공백, "null", "None" 등 절대 금지!
           * ✅ 올바른 예시: "AI 기술 동향", "데이터베이스 최적화 방법", "클라우드 보안 전략"
           * ❌ 잘못된 예시: null, "", " ", "null", "None", undefined

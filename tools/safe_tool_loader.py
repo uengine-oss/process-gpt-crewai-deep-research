@@ -27,9 +27,11 @@ def _handle_error(operation: str, error: Exception) -> List:
 class SafeToolLoader:
     """도구 이름만 관리하는 간소화된 로더"""
     
-    def __init__(self):
+    def __init__(self, tenant_id: str = "localhost", user_id: str = ""):
         self.allowed_tools = ["mem0", "perplexity(mcp)", "memento"]
-        logger.info(f"✅ SafeToolLoader 초기화 완료 (허용 도구: {self.allowed_tools})")
+        self.tenant_id = tenant_id
+        self.user_id = user_id
+        logger.info(f"✅ SafeToolLoader 초기화 완료 (허용 도구: {self.allowed_tools}, tenant_id: {self.tenant_id}, user_id: {self.user_id})")
 
     def create_tools_from_names(self, tool_names: List[str]) -> List:
         """tool_names 리스트에서 실제 Tool 객체들 생성"""
@@ -65,7 +67,7 @@ class SafeToolLoader:
         try:
             from .knowledge_manager import Mem0Tool
             logger.info("✅ mem0 도구 로드 성공")
-            return [Mem0Tool()]
+            return [Mem0Tool(user_id=self.user_id)]
         except Exception as e:
             return _handle_error("mem0 로드", e)
 
@@ -101,7 +103,7 @@ class SafeToolLoader:
         try:
             from .knowledge_manager import MementoTool
             logger.info("✅ memento 도구 로드 성공")
-            return [MementoTool()]
+            return [MementoTool(tenant_id=self.tenant_id)]
         except Exception as e:
             return _handle_error("memento 로드", e)
 

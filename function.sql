@@ -35,17 +35,21 @@ CREATE OR REPLACE FUNCTION public.fetch_done_data(
 )
 RETURNS TABLE (
   output   jsonb,
-  feedback jsonb
+  feedback jsonb,
+  draft    jsonb
 )
 LANGUAGE SQL
 AS $$
-  SELECT t.output, t.feedback
+  SELECT 
+    CASE WHEN t.status = 'DONE' THEN t.output ELSE NULL END as output,
+    CASE WHEN t.status = 'IN_PROGRESS' THEN t.feedback ELSE NULL END as feedback,
+    CASE WHEN t.status = 'IN_PROGRESS' THEN t.draft ELSE NULL END as draft
     FROM todolist AS t
    WHERE t.proc_inst_id = p_proc_inst_id
      AND (
        (t.status = 'DONE'        AND t.output   IS NOT NULL)
        OR
-       (t.status = 'IN_PROGRESS' AND t.feedback IS NOT NULL)
+       (t.status = 'IN_PROGRESS' AND (t.feedback IS NOT NULL OR t.draft IS NOT NULL))
      )
    ORDER BY t.start_date
 $$;

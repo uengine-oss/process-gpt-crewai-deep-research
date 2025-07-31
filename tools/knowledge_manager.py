@@ -1,7 +1,7 @@
 import os
 import logging
 import traceback
-from typing import Optional, List, Type
+from typing import List, Type
 from pydantic import BaseModel, Field, PrivateAttr
 from crewai.tools import BaseTool
 from dotenv import load_dotenv
@@ -41,7 +41,6 @@ def _handle_error(operation: str, error: Exception) -> str:
 # ============================================================================
 
 class KnowledgeQuerySchema(BaseModel):
-    user_id: str = Field(..., description="에이전트 식별자(UUID)")
     query: str = Field(..., description="검색할 지식 쿼리")
 
 # ============================================================================
@@ -56,8 +55,9 @@ class Mem0Tool(BaseTool):
     
     _memory: Memory = PrivateAttr()
 
-    def __init__(self, **kwargs):
+    def __init__(self, user_id: str = "", **kwargs):
         super().__init__(**kwargs)
+        self.user_id = user_id
         self._memory = self._initialize_memory()
 
     def _initialize_memory(self) -> Memory:
@@ -75,16 +75,16 @@ class Mem0Tool(BaseTool):
         }
         return Memory.from_config(config_dict=config)
 
-    def _run(self, user_id: str, query: str) -> str:
+    def _run(self, query: str) -> str:
         """지식 검색 및 결과 반환"""
         if not query:
             return "검색할 쿼리를 입력해주세요."
         
         try:
-            logger.info(f"🔍 지식 검색 시작: user_id={user_id}, query='{query}'")
+            logger.info(f"🔍 지식 검색 시작: user_id={self.user_id}, query='{query}'")
             
             # 검색 실행
-            results = self._memory.search(query, user_id=user_id)
+            results = self._memory.search(query, user_id=self.user_id)
             hits = results.get("results", [])
             
             # hybrid 필터링 적용: threshold=0.6, 최소 5개 보장
@@ -126,7 +126,6 @@ class Mem0Tool(BaseTool):
 
 class MementoQuerySchema(BaseModel):
     query: str = Field(..., description="검색 키워드 또는 질문")
-    tenant_id: str = Field("localhost", description="테넌트 식별자 (기본값 localhost)")
 
 class MementoTool(BaseTool):
     """사내 문서 검색을 수행하는 도구"""
@@ -134,20 +133,25 @@ class MementoTool(BaseTool):
     description: str = "사내 문서 검색을 위한 도구"
     args_schema: Type[MementoQuerySchema] = MementoQuerySchema
 
-    def _run(self, query: str, tenant_id: str = "localhost") -> str:
+    def __init__(self, tenant_id: str = "localhost", **kwargs):
+        super().__init__(**kwargs)
+        self.tenant_id = tenant_id
+        logger.info(f"🔧 MementoTool 초기화: tenant_id={self.tenant_id}")
+
+    def _run(self, query: str) -> str:
         try:
-            logger.info(f"🔍 Memento 문서 검색 시작: tenant_id='{tenant_id}', query='{query}'")
+            logger.info(f"🔍 Memento 문서 검색 시작: tenant_id='{self.tenant_id}', query='{query}'")
 
             response = requests.post(
-                # "http://memento.process-gpt.io/retrieve",
-                "http://localhost:8005/retrieve",
-                json={"query": query, "options": {"tenant_id": tenant_id}}
+                "http://memento.process-gpt.io/retrieve",
+                # "http://localhost:8005/retrieve",
+                json={"query": query, "options": {"tenant_id": self.tenant_id}}
             )
             if response.status_code != 200:
                 return f"API 오류: {response.status_code}"
             data = response.json()
             if not data.get("response"):
-                return f"테넌트 '{tenant_id}'에서 '{query}' 검색 결과가 없습니다."
+                return f"테넌트 '{self.tenant_id}'에서 '{query}' 검색 결과가 없습니다."
             results = []
             # 검색 결과 로그 출력
             docs = data.get("response", [])
@@ -158,6 +162,6 @@ class MementoTool(BaseTool):
                 content = doc.get('page_content', '')
                 logger.info(f"📄 문서: {fname}, 청크: {idx}, 내용: {content[:100]}...")
                 results.append(f"📄 파일: {fname} (청크 #{idx})\n내용: {content}\n---")
-            return f"테넌트 '{tenant_id}'에서 '{query}' 검색 결과:\n\n" + "\n".join(results)
+            return f"테넌트 '{self.tenant_id}'에서 '{query}' 검색 결과:\n\n" + "\n".join(results)
         except Exception as e:
             return f"검색 중 오류 발생: {e}"

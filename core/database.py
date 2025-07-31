@@ -86,21 +86,22 @@ async def fetch_task_status(todo_id: str) -> Optional[str]:
 # 완료된 데이터 조회  
 # ============================================================================  
 
-async def fetch_done_data(proc_inst_id: Optional[str]) -> Tuple[List[Any], List[Any]]:
-    """Supabase RPC로 완료된 output 및 feedback 조회"""
+async def fetch_done_data(proc_inst_id: Optional[str]) -> Tuple[List[Any], List[Any], List[Any]]:
+    """Supabase RPC로 완료된 output, feedback, draft 조회"""
     if not proc_inst_id:
-        return [], []
+        return [], [], []
     try:
         supabase = get_db_client()
         resp = supabase.rpc(
             'fetch_done_data',
             {'p_proc_inst_id': proc_inst_id}
         ).execute()
-        outputs, feedbacks = [], []
+        outputs, feedbacks, drafts = [], [], []
         for row in resp.data or []:
             outputs.append(row.get('output'))
             feedbacks.append(row.get('feedback'))
-        return outputs, feedbacks
+            drafts.append(row.get('draft'))
+        return outputs, feedbacks, drafts
     except Exception as e:
         _handle_db_error("완료데이터조회", e)
 

@@ -78,8 +78,8 @@ async def _prepare_task_inputs(row: Dict) -> Dict:
     proc_inst_id = row.get('proc_inst_id')
     
     # 이전 컨텍스트 요약
-    done_outputs, done_feedbacks = await fetch_done_data(proc_inst_id)
-    context_summary = summarize(done_outputs, done_feedbacks)
+    done_outputs, done_feedbacks, done_drafts = await fetch_done_data(proc_inst_id)
+    context_summary = summarize(done_outputs, done_feedbacks, done_drafts)
     
     # 사용자 및 폼 정보 조회
     participants = await fetch_participants_info(row.get('user_id', ''))

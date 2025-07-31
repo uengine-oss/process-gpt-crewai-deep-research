@@ -8,7 +8,7 @@ load_dotenv('.env.test', override=True)
 
 from core.database import initialize_db, get_db_client
 from core.polling_manager import _prepare_task_inputs
-from flows.multi_format_flow import MultiFormatFlow, MultiFormatState
+from flows.multi_format_flow import MultiFormatFlow
 
 # DB 초기화
 initialize_db()
