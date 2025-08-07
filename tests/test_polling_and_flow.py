@@ -1,10 +1,20 @@
 import os
+import sys
 import pytest
+import logging
 from dotenv import load_dotenv
+
+# 프로젝트 루트 디렉토리를 Python 경로에 추가
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # 테스트 환경 설정
 os.environ['ENV'] = 'test'
 load_dotenv('.env.test', override=True)
+
+# 로깅 설정 (모든 로그 INFO 레벨로 표시)
+logging.basicConfig(level=logging.INFO, format='%(name)s - %(levelname)s - %(message)s')
 
 from core.database import initialize_db, get_db_client
 from core.polling_manager import _prepare_task_inputs
@@ -85,7 +95,7 @@ async def test_full_flow_phase():
     """
     MultiFormatFlow 전체 실행 흐름 테스트
     """
-    todo_id = "529a7104-978c-4953-ae88-6deb9b8d3fa5"
+    todo_id = "09a14ede-c13f-4007-91d4-52e4dffbc214"
     client = get_db_client()
     row = (
         client
@@ -154,4 +164,34 @@ async def test_full_flow_phase():
     if problems:
         assert False, f"❌ 플로우 실행 실패: {', '.join(problems)}"
     
-    print(f"✓ 전체 플로우 성공") 
+    print(f"✓ 전체 플로우 성공")
+
+
+# ============================================================================
+# 디버그 실행용 메인 함수
+# ============================================================================
+
+async def main():
+    """디버그 실행용 메인 함수 - pytest 없이 직접 실행 가능"""
+    print("=== 디버그 모드 실행 ===\n")
+    
+    try:
+        # print("1. prepare_phase 테스트 시작...")
+        # await test_prepare_phase()
+        # print("✓ prepare_phase 테스트 완료\n")
+        
+        print("2. full_flow_phase 테스트 시작...")
+        await test_full_flow_phase()
+        print("✓ full_flow_phase 테스트 완료\n")
+        
+        print("🎉 모든 테스트 성공적으로 완료!")
+        
+    except Exception as e:
+        print(f"❌ 테스트 실행 중 오류 발생: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main()) 

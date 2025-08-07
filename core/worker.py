@@ -16,6 +16,7 @@ sys.path.append(
 
 from flows.multi_format_flow import MultiFormatFlow
 from core.database import initialize_db
+from tools.safe_tool_loader import SafeToolLoader
 
 async def main_async(inputs: dict):
     """
@@ -30,8 +31,10 @@ async def main_async(inputs: dict):
     for k, v in inputs.items():
         setattr(flow.state, k, v)
 
-    # Flow 실행 → 내부에서 save_context 및 DB 업데이트까지 처리
-    await flow.kickoff_async()
+    try:
+        await flow.kickoff_async()
+    finally:
+        SafeToolLoader.shutdown_all_adapters()
 
 def main():
     # 1) 커맨드라인 인자로 전달된 JSON 파싱

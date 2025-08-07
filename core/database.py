@@ -285,3 +285,23 @@ async def fetch_all_agents() -> List[Dict[str, Any]]:
             return []
             
     return await asyncio.to_thread(_sync) 
+
+# ============================================================================
+# 테넌트 MCP 설정 조회 (Supabase)
+# ============================================================================
+
+def fetch_tenant_mcp_config(tenant_id: str) -> Optional[Dict[str, Any]]:
+    """테넌트 MCP 설정 조회"""
+    try:
+        supabase = get_db_client()
+        resp = (
+            supabase
+            .table('tenants')
+            .select('mcp')
+            .eq('id', tenant_id)
+            .single()
+            .execute()
+        )
+        return resp.data.get('mcp') if resp.data else None
+    except Exception as e:
+        _handle_db_error("테넌트MCP설정조회", e)
