@@ -92,16 +92,18 @@ class CrewAIEventLogger:
     def _extract_task_completed_data(self, event_obj: Any) -> Dict[str, Any]:
         """Task 완료 이벤트 데이터 추출"""
         output = getattr(event_obj, 'output', 'Completed')
-        
-        # JSON 문자열이면 파싱, 아니면 그대로 반환
+
+        # 문자열이면 JSON 파싱 시도, 실패하면 원본 문자열 유지
         if isinstance(output, str):
             try:
-                return json.loads(output)
+                parsed = json.loads(output)
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON 파싱 실패: {e}")
-                return output
-        
-        return output
+                parsed = output
+        else:
+            parsed = output
+
+        return {"result": parsed}
 
     def _extract_tool_data(self, event_obj: Any) -> Dict[str, Any]:
         """Tool 사용 이벤트 데이터 추출"""
