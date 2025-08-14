@@ -221,7 +221,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             job_id=f"final_report_merge_{report_key}",
             crew_type="report",
             todo_id=self.state.todo_id,
-            proc_inst_id=self.state.proc_inst_id
+            proc_inst_id=self.state.proc_inst_id,
+            form_key=report_key
         )
         
         # 순서대로 병합
@@ -242,7 +243,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             crew_type="report",
             todo_id=self.state.todo_id,
             proc_inst_id=self.state.proc_inst_id,
-            form_id=report_key
+            form_id=report_key,
+            form_key=report_key
         )
 
     async def _save_intermediate_result(self, report_key: str, sections: List[Dict[str, Any]]) -> None:

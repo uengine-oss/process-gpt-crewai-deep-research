@@ -262,7 +262,8 @@ class WrappedCrew(Crew):
             crew_type="report",
             todo_id=inputs.get('todo_id') if inputs else None,
             proc_inst_id=inputs.get('proc_inst_id') if inputs else None,
-            form_id=inputs.get('report_form_id') if inputs else None
+            form_id=inputs.get('report_form_id') if inputs else None,
+            form_key=inputs.get('report_form_id') if inputs else None
         )
 
     def _log_start(self, inputs):

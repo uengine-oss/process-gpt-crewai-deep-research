@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 import logging
 
 from core.database import initialize_db, get_db_client
-from utils.context_manager import crew_type_var, todo_id_var, proc_id_var, form_id_var
+from utils.context_manager import crew_type_var, todo_id_var, proc_id_var, form_id_var, form_key_var
 
 # ============================================================================
 # 초기화 및 설정
@@ -103,7 +103,9 @@ class CrewAIEventLogger:
         else:
             parsed = output
 
-        return {"result": parsed}
+        # 완료 이벤트는 여기서 키를 결정: form_key가 있으면 해당 키, 없으면 result
+        key_name = form_key_var.get() or "result"
+        return {key_name: parsed}
 
     def _extract_tool_data(self, event_obj: Any) -> Dict[str, Any]:
         """Tool 사용 이벤트 데이터 추출"""
@@ -189,7 +191,7 @@ class CrewAIEventLogger:
             
             # 데이터 직렬화
             safe_data = self._safe_serialize_data(event_data)
-            
+
             # 이벤트 레코드 생성 및 저장
             event_record = self._create_event_record(
                 event_obj.type, safe_data, job_id, crew_type, todo_id, proc_inst_id

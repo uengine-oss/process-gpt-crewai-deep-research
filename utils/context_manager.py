@@ -29,6 +29,7 @@ crew_type_var: ContextVar[str] = ContextVar("crew_type", default="unknown")
 todo_id_var: ContextVar[str] = ContextVar("todo_id", default=None)
 proc_id_var: ContextVar[str] = ContextVar("proc_inst_id", default=None)
 form_id_var: ContextVar[str] = ContextVar("form_id", default=None)
+form_key_var: ContextVar[str] = ContextVar("form_key", default=None)
 
 
 
@@ -36,13 +37,18 @@ form_id_var: ContextVar[str] = ContextVar("form_id", default=None)
 # 컨텍스트 관리
 # ============================================================================
 
-def set_crew_context(crew_type: str, todo_id: str = None, proc_inst_id: str = None, form_id: str = None):
+def set_crew_context(crew_type: str, todo_id: str = None, proc_inst_id: str = None, form_id: str = None, form_key: str = None):
     """ContextVar에 crew 정보 설정 및 토큰 반환"""
     try:
         token_ct = crew_type_var.set(crew_type)
         token_td = todo_id_var.set(todo_id)
         token_pid = proc_id_var.set(proc_inst_id)
         token_fid = form_id_var.set(form_id)
+        # slide/report 에서만 form_key 저장
+        if crew_type in ("slide", "report"):
+            form_key_var.set(form_key)
+        else:
+            form_key_var.set(None)
         return token_ct, token_td, token_pid, token_fid
     except Exception as e:
         handle_error("컨텍스트설정", e)
@@ -54,6 +60,7 @@ def reset_crew_context(token_ct, token_td, token_pid, token_fid):
         todo_id_var.reset(token_td)
         proc_id_var.reset(token_pid)
         form_id_var.reset(token_fid)
+        form_key_var.set(None)
     except Exception as e:
         handle_error("컨텍스트리셋", e)
 
