@@ -91,8 +91,17 @@ class CrewAIEventLogger:
 
     def _extract_task_completed_data(self, event_obj: Any) -> Dict[str, Any]:
         """Task 완료 이벤트 데이터 추출"""
-        final_result = getattr(event_obj, 'output', 'Completed')
-        return {"final_result": str(final_result)}
+        output = getattr(event_obj, 'output', 'Completed')
+        
+        # JSON 문자열이면 파싱, 아니면 그대로 반환
+        if isinstance(output, str):
+            try:
+                return json.loads(output)
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON 파싱 실패: {e}")
+                return output
+        
+        return output
 
     def _extract_tool_data(self, event_obj: Any) -> Dict[str, Any]:
         """Tool 사용 이벤트 데이터 추출"""
@@ -130,13 +139,6 @@ class CrewAIEventLogger:
                 safe_data[key] = f"[직렬화 실패: {type(value).__name__}]"
                 
         return safe_data
-
-    def _apply_form_id_wrapper(self, event_data: Dict[str, Any], form_id: str, event_type: str) -> Dict[str, Any]:
-        """form_id로 final_result 래핑"""
-        if form_id and event_type == "task_completed" and "final_result" in event_data:
-            original_result = event_data["final_result"]
-            event_data["final_result"] = {form_id: original_result}
-        return event_data
 
     # ============================================================================
     # 데이터베이스 저장
@@ -183,9 +185,6 @@ class CrewAIEventLogger:
             proc_inst_id = proc_id_var.get()
             form_id = form_id_var.get()
             
-            # form_id 래핑 적용
-            event_data = self._apply_form_id_wrapper(event_data, form_id, event_obj.type)
-            
             # 데이터 직렬화
             safe_data = self._safe_serialize_data(event_data)
             
@@ -213,13 +212,7 @@ class CrewAIEventLogger:
             proc_inst_id = proc_inst_id or proc_id_var.get()
             form_id = form_id or form_id_var.get()
             job_id = job_id or event_type
-            
-            # form_id 래핑 적용
-            if form_id and "final_result" in data:
-                original_result = data["final_result"]
-                data = data.copy()
-                data["final_result"] = {form_id: original_result}
-            
+                        
             # 이벤트 레코드 생성 및 저장
             record = self._create_event_record(
                 event_type, data, job_id, crew_type, todo_id, proc_inst_id

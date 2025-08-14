@@ -36,7 +36,8 @@ class MultiFormatState(BaseModel):
     todo_id: Optional[str] = None
     proc_inst_id: Optional[str] = None
     agent_info: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
-    previous_context: str = ""
+    previous_outputs: str = ""  # 이전 결과물 요약 (별도 관리)
+    previous_feedback: str = ""  # 피드백 요약 (별도 관리)
     proc_form_id: Optional[str] = None
 
 # ============================================================================
@@ -137,7 +138,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             "topic": self.state.topic,
             "user_info": self.state.user_info,
             "agent_info": self.state.agent_info,
-            "previous_context": self.state.previous_context,
+            "previous_outputs": self.state.previous_outputs,  # 이전 결과물
+            "previous_feedback": self.state.previous_feedback,  # 피드백
             "available_agents": agents,
             "todo_id": self.state.todo_id,
             "proc_inst_id": self.state.proc_inst_id
@@ -195,11 +197,18 @@ class MultiFormatFlow(Flow[MultiFormatState]):
 
     async def _create_single_section(self, section: Dict[str, Any], report_key: str) -> str:
         """단일 섹션 내용 생성"""
-        crew = DynamicReportCrew(section, self.state.topic, self.state.previous_context)
+        crew = DynamicReportCrew(
+            section, 
+            self.state.topic, 
+            previous_outputs=self.state.previous_outputs,
+            previous_feedback=self.state.previous_feedback
+        )
         result = await crew.create_crew().kickoff_async(inputs={
             "todo_id": self.state.todo_id,
             "proc_inst_id": self.state.proc_inst_id,
-            "report_form_id": report_key
+            "report_form_id": report_key,
+            "previous_outputs": self.state.previous_outputs,  # 이전 결과물
+            "previous_feedback": self.state.previous_feedback  # 피드백
         })
         return getattr(result, 'raw', result)
 
@@ -228,7 +237,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         # 병합 완료 이벤트
         self.event_logger.emit_event(
             event_type="task_completed",
-            data={"final_result": merged_content},
+            data={report_key: merged_content},
             job_id=f"final_report_merge_{report_key}",
             crew_type="report",
             todo_id=self.state.todo_id,
@@ -257,47 +266,35 @@ class MultiFormatFlow(Flow[MultiFormatState]):
 
     @listen("generate_reports")
     async def generate_slides(self) -> Dict[str, str]:
-        """리포트 기반 슬라이드 생성"""
+        """슬라이드 생성 - 리포트 내용 또는 이전 결과물 기반"""
         try:
             # 리포트 기반 슬라이드 생성
             if self.state.report_contents:
                 for report_key, content in self.state.report_contents.items():
-                    await self._create_slides_from_report(report_key, content)
+                    await self._create_slides(content, report_key)
             
-            # 이전 컨텍스트 기반 슬라이드 생성
+            # 이전 결과물 기반 슬라이드 생성
             else:
-                await self._create_slides_from_context()
+                await self._create_slides(self.state.previous_outputs)
                 
             return self.state.slide_contents
             
         except Exception as e:
             self._handle_error("슬라이드생성", e)
 
-    async def _create_slides_from_report(self, report_key: str, content: str) -> None:
-        """리포트 기반 슬라이드 생성"""
+    async def _create_slides(self, content: str, report_key: str = None) -> None:
+        """통합 슬라이드 생성 함수"""
         for slide_form in self.state.execution_plan.slide_phase.forms:
-            if report_key in slide_form.get('dependencies', []):
-                slide_key = slide_form['key']
-                crew = self.config_manager.create_slide_crew()
+            # 리포트 기반인 경우 dependency 체크
+            if report_key and report_key not in slide_form.get('dependencies', []):
+                continue
                 
-                result = await crew.kickoff_async(inputs={
-                    'report_content': content,
-                    'user_info': self.state.user_info,
-                    'todo_id': self.state.todo_id,
-                    'proc_inst_id': self.state.proc_inst_id,
-                    "slide_form_id": slide_key
-                })
-                
-                self.state.slide_contents[slide_key] = getattr(result, 'raw', result)
-
-    async def _create_slides_from_context(self) -> None:
-        """이전 컨텍스트 기반 슬라이드 생성"""
-        for slide_form in self.state.execution_plan.slide_phase.forms:
             slide_key = slide_form['key']
             crew = self.config_manager.create_slide_crew()
             
             result = await crew.kickoff_async(inputs={
-                'report_content': self.state.previous_context,
+                'report_content': content,  # 리포트 내용 또는 이전 결과물
+                'previous_feedback': self.state.previous_feedback,  # 피드백 (별도)
                 'user_info': self.state.user_info,
                 'todo_id': self.state.todo_id,
                 'proc_inst_id': self.state.proc_inst_id,
@@ -312,70 +309,63 @@ class MultiFormatFlow(Flow[MultiFormatState]):
 
     @listen("generate_slides")
     async def generate_texts(self) -> Dict[str, Any]:
-        """리포트 기반 텍스트 생성"""
+        """텍스트 폼 생성 - 리포트 내용 또는 이전 결과물 기반"""
         try:
-            # 리포트 기반 텍스트 생성
+            # content 결정: 리포트가 있으면 리포트, 없으면 이전 결과물
             if self.state.report_contents:
-                for report_key, content in self.state.report_contents.items():
-                    await self._create_texts_from_report(report_key, content)
-            
-            # 이전 컨텍스트 기반 텍스트 생성
+                content = self.state.report_contents  # 리포트 내용
             else:
-                await self._create_texts_from_context()
+                content = self.state.previous_outputs or ""  # 이전 결과물
+            
+            # 실행계획의 모든 text_phase form들에 매칭되는 form_type들을 한번에 수집
+            all_target_form_types = []
+            for text_form in self.state.execution_plan.text_phase.forms:
+                text_key = text_form['key']
+                # 실행계획의 key에 해당하는 모든 form_type들 찾기
+                matching_form_types = [ft for ft in self.state.form_types if ft.get('key') == text_key]
+                all_target_form_types.extend(matching_form_types)
+            
+            # 매칭되는 form_type들이 있으면 한번에 처리
+            if all_target_form_types:
+                await self._generate_text_content(content, all_target_form_types)
                 
             return self.state.text_contents
             
         except Exception as e:
             self._handle_error("텍스트생성", e)
 
-    async def _create_texts_from_report(self, report_key: str, content: str) -> None:
-        """리포트 기반 텍스트 생성"""
-        dependent_forms = [
-            form for form in self.state.execution_plan.text_phase.forms
-            if report_key in form.get('dependencies', [])
-        ]
-        
-        if dependent_forms:
-            form_keys = [form['key'] for form in dependent_forms]
-            await self._generate_text_content(content, form_keys)
 
-    async def _create_texts_from_context(self) -> None:
-        """이전 컨텍스트 기반 텍스트 생성"""
-        if self.state.execution_plan.text_phase.forms:
-            form_keys = [form['key'] for form in self.state.execution_plan.text_phase.forms]
-            # report_content 없이 이전 컨텍스트만 전달
-            await self._generate_text_content("", form_keys)
-
-    async def _generate_text_content(self, content: str, form_keys: List[str]) -> None:
-        """텍스트 내용 생성"""
+    async def _generate_text_content(self, content: Any, target_form_types: List[Dict]) -> None:
+        """텍스트 내용 생성 - 한번에 모든 form_type 처리"""
         crew = self.config_manager.create_form_crew()
+
         result = await crew.kickoff_async(inputs={
-            'report_content': content,
+            'report_content': content,  # 리포트 내용 또는 이전 결과물
+            'previous_feedback': self.state.previous_feedback,  # 피드백 (별도)
             'topic': self.state.topic,
             'user_info': self.state.user_info,
             'todo_id': self.state.todo_id,
             'proc_inst_id': self.state.proc_inst_id,
-            'text_form_keys': form_keys
+            'form_type': target_form_types  # 매칭된 모든 form_type들을 한번에 전달
         })
         
         raw_result = getattr(result, 'raw', result)
-        await self._parse_text_results(raw_result, form_keys)
+        await self._parse_text_results(raw_result)
 
-    async def _parse_text_results(self, raw_result: str, form_keys: List[str]) -> None:
+    async def _parse_text_results(self, raw_result: str) -> None:
         """텍스트 결과 파싱 및 저장"""
         try:
             cleaned_result = clean_json_response(raw_result)
             parsed_results = json.loads(cleaned_result)
-            
-            for form_key in form_keys:
-                if form_key in parsed_results:
-                    self.state.text_contents[form_key] = parsed_results[form_key]
-                else:
-                    self.state.text_contents[form_key] = raw_result
+            # FormCrew에서 반환된 결과를 그대로 저장 (이미 {key: value} 형태)
+            if isinstance(parsed_results, dict):
+                self.state.text_contents.update(parsed_results)
+            else:
+                # 파싱 실패 시 기본 형태로 저장
+                self.state.text_contents["text_result"] = {"text": cleaned_result}
                     
         except json.JSONDecodeError:
-            for form_key in form_keys:
-                self.state.text_contents[form_key] = raw_result
+            self.state.text_contents["text_result"] = {"text": str(raw_result)}
 
     # ============================================================================
     # 5. 최종 결과 저장

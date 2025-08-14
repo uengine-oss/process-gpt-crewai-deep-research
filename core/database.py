@@ -86,24 +86,23 @@ async def fetch_task_status(todo_id: str) -> Optional[str]:
 # 완료된 데이터 조회  
 # ============================================================================  
 
-async def fetch_done_data(proc_inst_id: Optional[str]) -> Tuple[List[Any], List[Any], List[Any]]:
-    """Supabase RPC로 완료된 output, feedback, draft 조회"""
+async def fetch_done_data(proc_inst_id: Optional[str]) -> List[Any]:
+    """완료된 데이터 조회 (output만)"""
     if not proc_inst_id:
-        return [], [], []
+        return []
     try:
         supabase = get_db_client()
         resp = supabase.rpc(
             'fetch_done_data',
             {'p_proc_inst_id': proc_inst_id}
         ).execute()
-        outputs, feedbacks, drafts = [], [], []
+        outputs = []
         for row in resp.data or []:
             outputs.append(row.get('output'))
-            feedbacks.append(row.get('feedback'))
-            drafts.append(row.get('draft'))
-        return outputs, feedbacks, drafts
+        return outputs
     except Exception as e:
         _handle_db_error("완료데이터조회", e)
+        return []
 
 # ============================================================================  
 # 결과 저장  
@@ -224,20 +223,9 @@ async def fetch_form_types(tool_val: str, tenant_id: str) -> Tuple[str, List[Dic
             fields_json = resp.data[0].get('fields_json') if resp.data else None
             print(f'✅ 폼 필드 JSON: {fields_json}')
             if not fields_json:
-                return form_id, [{'id': form_id, 'type': 'default'}]
-            
-            form_types = []
-            for field in fields_json:
-                field_type = field.get('type', '').lower()
-                normalized_type = field_type if field_type in ['report', 'slide'] else 'text'
-                form_types.append({
-                    'id': field.get('key'),
-                    'type': normalized_type,
-                    'key': field.get('key'),
-                    'text': field.get('text', '')
-                })
-            
-            return form_id, form_types
+                return form_id, [{'key': form_id, 'type': 'default', 'text': ''}]
+
+            return form_id, fields_json
             
         except Exception as e:
             _handle_db_error("폼타입조회", e)
