@@ -4,6 +4,7 @@ import asyncio
 import socket
 import traceback
 from typing import Optional, List, Dict, Any, Tuple
+import re
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -143,13 +144,17 @@ async def fetch_participants_info(user_ids: str) -> Dict:
             agent_info_list = []
             
             for user_id in id_list:
-                # 이메일로 사용자 조회
+                # UUID가 아니면 사용자/에이전트 모두 스킵
+                if not _is_valid_uuid(user_id):
+                    continue
+
+                # (기존 스타일 유지) 이메일로 사용자 조회 시도
                 user_data = _get_user_by_email(supabase, user_id)
                 if user_data:
                     user_info_list.append(user_data)
                     continue
-                    
-                # ID로 에이전트 조회
+
+                # UUID인 경우에만 ID로 에이전트 조회
                 agent_data = _get_agent_by_id(supabase, user_id)
                 if agent_data:
                     agent_info_list.append(agent_data)
@@ -180,25 +185,39 @@ def _get_user_by_email(supabase: Client, user_id: str) -> Optional[Dict]:
     return None
 
 def _get_agent_by_id(supabase: Client, user_id: str) -> Optional[Dict]:
-    """ID로 에이전트 조회"""
+    """UUID `id`로 에이전트 조회 (비-UUID는 호출하지 않음)"""
     resp = supabase.table('users').select(
         'id, username, role, goal, persona, tools, profile, is_agent, model, tenant_id'
     ).eq('id', user_id).execute()
     
-    if resp.data and resp.data[0].get('is_agent'):
-        agent = resp.data[0]
-        return {
-            'id': agent.get('id'),
-            'name': agent.get('username'),
-            'role': agent.get('role'),
-            'goal': agent.get('goal'),
-            'persona': agent.get('persona'),
-            'tools': agent.get('tools'),
-            'profile': agent.get('profile'),
-            'model': agent.get('model'),
-            'tenant_id': agent.get('tenant_id')
-        }
+    if resp.data:
+        # is_agent=True 인 첫 행 선택
+        rows = [r for r in resp.data if r.get('is_agent')]
+        agent = rows[0] if rows else None
+        if agent:
+            return {
+                'id': agent.get('id'),
+                'name': agent.get('username'),
+                'role': agent.get('role'),
+                'goal': agent.get('goal'),
+                'persona': agent.get('persona'),
+                'tools': agent.get('tools'),
+                'profile': agent.get('profile'),
+                'model': agent.get('model'),
+                'tenant_id': agent.get('tenant_id')
+            }
     return None
+
+def _is_valid_uuid(value: str) -> bool:
+    """UUID v1~v5 형식인지 검증 (소문자/대문자 허용)"""
+    uuid_regex = re.compile(
+        r'^[0-9a-fA-F]{8}-'
+        r'[0-9a-fA-F]{4}-'
+        r'[1-5][0-9a-fA-F]{3}-'
+        r'[89abAB][0-9a-fA-F]{3}-'
+        r'[0-9a-fA-F]{12}$'
+    )
+    return bool(uuid_regex.match(value))
 
 # ============================================================================
 # 폼 타입 조회 (Supabase)

@@ -2,6 +2,7 @@ import logging
 import traceback
 from typing import Dict, Any, Optional
 from crewai import Agent, Crew, Process, Task
+from pydantic import PrivateAttr
 from tools.safe_tool_loader import SafeToolLoader
 from utils.context_manager import set_crew_context, reset_crew_context
 
@@ -223,11 +224,12 @@ class DynamicReportCrew:
 class WrappedCrew(Crew):
     """컨텍스트 관리와 로깅이 추가된 크루"""
 
+    _section_title: str = PrivateAttr(default=None)
+    previous_outputs: Optional[str] = None
+    previous_feedback: Optional[str] = None
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._section_title = None
-        self.previous_outputs = None
-        self.previous_feedback = None
 
     async def kickoff_async(self, inputs=None):
         """비동기 실행 with 컨텍스트 관리 및 로깅"""

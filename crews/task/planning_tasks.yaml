@@ -53,7 +53,8 @@ create_execution_plan:
                     {{"key": "text_form_2", "dependencies": ["report_form_2"]}}
                 ]
             }}
-        }}
+        }},
+        "explanation_text": "### 실행 계획 설명\\n\\n**계획 요약:**\\n- 생성된 계획의 핵심을 3-5줄로 설명\\n\\n**단계 구성 근거:**\\n- report → slide → text 순서를 선택한 이유\\n\\n**의존성 결정 근거:**\\n- 각 slide/text가 어떤 report에 의존하는지의 판단 기준과 매칭 로직"
     }}
     
     슬라이드와 텍스트의 의미적 관계 규칙:

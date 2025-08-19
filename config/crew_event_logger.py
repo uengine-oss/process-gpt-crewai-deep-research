@@ -93,17 +93,28 @@ class CrewAIEventLogger:
         """Task 완료 이벤트 데이터 추출"""
         output = getattr(event_obj, 'output', 'Completed')
 
+        # TaskOutput 객체면 .raw 속성에서 실제 결과 추출
+        if hasattr(output, 'raw'):
+            raw_output = output.raw
+        else:
+            raw_output = output
+
         # 문자열이면 JSON 파싱 시도, 실패하면 원본 문자열 유지
-        if isinstance(output, str):
+        if isinstance(raw_output, str):
             try:
-                parsed = json.loads(output)
+                parsed = json.loads(raw_output)
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON 파싱 실패: {e}")
-                parsed = output
+                parsed = raw_output
         else:
-            parsed = output
+            parsed = raw_output
 
-        # 완료 이벤트는 여기서 키를 결정: form_key가 있으면 해당 키, 없으면 result
+        # crew_type이 planning이면 원본 그대로 반환
+        current_crew_type = crew_type_var.get()
+        if current_crew_type == "planning":
+            return parsed if isinstance(parsed, dict) else {"result": parsed}
+        
+        # 다른 crew_type은 기존 로직: form_key가 있으면 해당 키, 없으면 result
         key_name = form_key_var.get() or "result"
         return {key_name: parsed}
 

@@ -31,7 +31,7 @@ WHERE n.nspname = 'public'
 DROP FUNCTION IF EXISTS public.fetch_done_data(text, text);
 
 
-kubectl logs -f agent-monitoring-deployment-56c6955f97-rcljv > output.log 2>&1
+kubectl logs -f crewai-deep-research-deployment-b85b89599-cjw5x  > output.log 2>&1
 kubectl get pods -l app=agent-monitoring
 uv run main.py > output.log 2>&1
 kubectl logs -f agent-monitoring-deployment-5bbbb76878-vgm7m > output.log 2>&1

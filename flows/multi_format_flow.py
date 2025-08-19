@@ -94,7 +94,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             # JSON 파싱 및 계획 저장
             raw_text = getattr(result, 'raw', result)
             cleaned_text = clean_json_response(raw_text)
-            plan_data = json.loads(cleaned_text).get('execution_plan', {})
+            parsed_data = json.loads(cleaned_text)
+            plan_data = parsed_data.get('execution_plan', {})
             self.state.execution_plan = ExecutionPlan.parse_obj(plan_data)
             
             return self.state.execution_plan
@@ -131,23 +132,33 @@ class MultiFormatFlow(Flow[MultiFormatState]):
 
     async def _create_report_sections(self) -> List[Dict[str, Any]]:
         """리포트 섹션 목록 생성"""
-        agents = await fetch_all_agents()
+        # available_agents 규칙
+        # - 우선선정 에이전트가 있으면 그것만 전달
+        # - 없으면 전체 에이전트 전달
+        prioritized_agents = self.state.agent_info or []
+        if prioritized_agents:
+            available_agents = prioritized_agents
+        else:
+            available_agents = await fetch_all_agents()
+        # 이후 매핑에도 동일 목록 사용
+        agents = available_agents
+
         crew = self.config_manager.create_agent_matching_crew()
         
         result = await crew.kickoff_async(inputs={
             "topic": self.state.topic,
             "user_info": self.state.user_info,
-            "agent_info": self.state.agent_info,
             "previous_outputs": self.state.previous_outputs,  # 이전 결과물
             "previous_feedback": self.state.previous_feedback,  # 피드백
-            "available_agents": agents,
+            "available_agents": available_agents,
             "todo_id": self.state.todo_id,
             "proc_inst_id": self.state.proc_inst_id
         })
         
         raw_text = getattr(result, 'raw', result)
         cleaned_text = clean_json_response(raw_text)
-        sections = json.loads(cleaned_text)
+        parsed_data = json.loads(cleaned_text)
+        sections = parsed_data.get('sections', parsed_data)  # 하위 호환성: sections 키가 없으면 전체를 배열로 간주
 
         for sec in sections:
             agent_ref = sec.get('agent', {}) or {}
@@ -222,7 +233,6 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             crew_type="report",
             todo_id=self.state.todo_id,
             proc_inst_id=self.state.proc_inst_id,
-            form_key=report_key
         )
         
         # 순서대로 병합
@@ -242,9 +252,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             job_id=f"final_report_merge_{report_key}",
             crew_type="report",
             todo_id=self.state.todo_id,
-            proc_inst_id=self.state.proc_inst_id,
-            form_id=report_key,
-            form_key=report_key
+            proc_inst_id=self.state.proc_inst_id
         )
 
     async def _save_intermediate_result(self, report_key: str, sections: List[Dict[str, Any]]) -> None:
