@@ -140,6 +140,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             available_agents = prioritized_agents
         else:
             available_agents = await fetch_all_agents()
+        # 에이전트 선택 모드 출력 (우선선정/전체조회)
+        print(f"👥 에이전트 선택 모드: {'우선선정' if prioritized_agents else '전체조회'} (선택 {len(available_agents)}명)")
         # 이후 매핑에도 동일 목록 사용
         agents = available_agents
 
