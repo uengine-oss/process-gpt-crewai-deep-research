@@ -1,5 +1,6 @@
 import logging
 import traceback
+import json
 from typing import Dict, Any, Optional
 from crewai import Agent, Crew, Process, Task
 from pydantic import PrivateAttr
@@ -239,6 +240,16 @@ class WrappedCrew(Crew):
         try:
             # 시작 로그
             self._log_start(inputs)
+            # 사용자 정보 간단 주입: Task 설명 말미에 지시 한 줄 추가
+            if inputs and inputs.get('user_info'):
+                try:
+                    user_info_text = json.dumps(inputs.get('user_info'), ensure_ascii=False)
+                    for task in getattr(self, 'tasks', []) or []:
+                        base_desc = getattr(task, 'description', '') or ''
+                        addition = f"\n\n[담당자 정보]\n{user_info_text}\n\n지시: 위 담당자 정보를 참고해 어조/문맥/호칭을 적절히 반영하여 작성하세요."
+                        setattr(task, 'description', base_desc + addition)
+                except Exception:
+                    pass
             
             # 실제 크루 실행
             result = await super().kickoff_async(inputs=inputs)

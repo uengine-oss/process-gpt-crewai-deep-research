@@ -14,7 +14,7 @@ create_execution_plan:
     **유형 매칭 요구사항**:
     - "type" 필드가 정확히 "report"인 경우에만 report_phase에 포함
     - "type" 필드가 정확히 "slide"인 경우에만 slide_phase에 포함
-    - "type" 필드가 "text" 또는 "textarea"인 경우에만 text_phase에 포함
+    - 위 두 경우를 제외한 모든 폼은 text_phase에 포함 (타입 불문)
     - 입력에 특정 유형의 폼이 없으면 해당 단계는 빈 forms 배열 []을 가져야 함
     - 입력 form_types의 실제 "key" 값만 사용하고, 새로운 것을 만들지 않음
     

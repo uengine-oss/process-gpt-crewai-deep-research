@@ -90,7 +90,7 @@ async def _prepare_task_inputs(row: Dict) -> Dict:
     
     # 사용자 및 폼 정보 조회
     participants = await fetch_participants_info(row.get('user_id', ''))
-    proc_form_id, form_types = await fetch_form_types(
+    proc_form_id, form_types, form_html = await fetch_form_types(
         row.get('tool', ''),
         str(row.get('tenant_id', ''))
     )
@@ -104,6 +104,7 @@ async def _prepare_task_inputs(row: Dict) -> Dict:
         "user_info": participants.get('user_info', []),
         "agent_info": participants.get('agent_info', []),
         "form_types": form_types,
+        "form_html": form_html,
         "proc_form_id": proc_form_id,
     }
 

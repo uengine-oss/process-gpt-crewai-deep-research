@@ -39,6 +39,7 @@ class MultiFormatState(BaseModel):
     previous_outputs: str = ""  # 이전 결과물 요약 (별도 관리)
     previous_feedback: str = ""  # 피드백 요약 (별도 관리)
     proc_form_id: Optional[str] = None
+    form_html: Optional[str] = None
 
 # ============================================================================
 # 유틸리티 함수
@@ -220,6 +221,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             "todo_id": self.state.todo_id,
             "proc_inst_id": self.state.proc_inst_id,
             "report_form_id": report_key,
+            "user_info": self.state.user_info,
             "previous_outputs": self.state.previous_outputs,  # 이전 결과물
             "previous_feedback": self.state.previous_feedback  # 피드백
         })
@@ -332,12 +334,12 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             # 실행계획의 모든 text_phase form들에 매칭되는 form_type들을 한번에 수집
             all_target_form_types = []
             for text_form in self.state.execution_plan.text_phase.forms:
-                text_key = text_form['key']
-                # 실행계획의 key에 해당하는 모든 form_type들 찾기
+                text_key = text_form.get('key')
+                if not text_key:
+                    continue
                 matching_form_types = [ft for ft in self.state.form_types if ft.get('key') == text_key]
                 all_target_form_types.extend(matching_form_types)
-            
-            # 매칭되는 form_type들이 있으면 한번에 처리
+
             if all_target_form_types:
                 await self._generate_text_content(content, all_target_form_types)
                 
@@ -358,7 +360,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             'user_info': self.state.user_info,
             'todo_id': self.state.todo_id,
             'proc_inst_id': self.state.proc_inst_id,
-            'form_type': target_form_types  # 매칭된 모든 form_type들을 한번에 전달
+            'form_type': target_form_types,  # 매칭된 모든 form_type들을 한번에 전달
+            'form_html': self.state.form_html
         })
         
         raw_result = getattr(result, 'raw', result)
