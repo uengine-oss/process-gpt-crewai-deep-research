@@ -33,7 +33,7 @@ async def test_prepare_phase():
     1) todolist 테이블에서 실제 todo_id로 row를 가져와,
     2) _prepare_task_inputs가 올바른 dict 구조를 반환하는지 검증
     """
-    todo_id = "9d316565-b891-43c6-8e70-cf91f9256bb9"
+    todo_id = "606f138d-c016-4ab8-95b7-a5c9468b43f9"
     client = get_db_client()
     resp = (
         client
@@ -69,7 +69,7 @@ async def test_full_flow_phase():
     """
     MultiFormatFlow 전체 실행 흐름 테스트
     """
-    todo_id = "9d316565-b891-43c6-8e70-cf91f9256bb9"
+    todo_id = "606f138d-c016-4ab8-95b7-a5c9468b43f9"
     client = get_db_client()
     row = (
         client

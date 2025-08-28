@@ -9,6 +9,7 @@ from mcp.client.stdio import StdioServerParameters
 from crewai_tools import MCPServerAdapter
 from core.database import fetch_tenant_mcp_config
 from .knowledge_manager import Mem0Tool, MementoTool
+from .image_manager import ImageGenTool
 
 # ============================================================================
 # 설정 및 초기화
@@ -36,7 +37,7 @@ class SafeToolLoader:
         self.tenant_id = tenant_id
         self.user_id = user_id
         # 직접 선언한 도구들
-        self.local_tools = ["mem0", "memento"]
+        self.local_tools = ["mem0", "memento", "image_gen"]
         logger.info(f"SafeToolLoader 초기화 완료 (tenant_id: {tenant_id}, user_id: {user_id})")
 
     def create_tools_from_names(self, tool_names: List[str]) -> List:
@@ -47,9 +48,10 @@ class SafeToolLoader:
         
         tools = []
         
-        # mem0, memento는 항상 기본 로드
+        # mem0, memento, image_gen는 항상 기본 로드
         tools.extend(self._load_mem0())
         tools.extend(self._load_memento())
+        tools.extend(self._load_image_manager())
         
         # 요청된 도구들 처리
         for name in tool_names:
@@ -80,6 +82,13 @@ class SafeToolLoader:
             return [MementoTool(tenant_id=self.tenant_id)]
         except Exception as e:
             return _handle_error("memento로드", e)
+
+    def _load_image_manager(self) -> List:
+        """image_gen 도구 로드"""
+        try:
+            return [ImageGenTool()]
+        except Exception as e:
+            return _handle_error("image_gen로드", e)
 
     def _load_mcp_tool(self, tool_name: str) -> List:
         """MCP 도구 로드 (timeout & retry 지원)"""
