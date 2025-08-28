@@ -51,7 +51,7 @@ class SafeToolLoader:
         # mem0, memento, image_gen는 항상 기본 로드
         tools.extend(self._load_mem0())
         tools.extend(self._load_memento())
-        tools.extend(self._load_image_manager())
+        # tools.extend(self._load_image_manager())
         
         # 요청된 도구들 처리
         for name in tool_names:
