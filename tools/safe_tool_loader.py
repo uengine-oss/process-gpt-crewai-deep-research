@@ -44,14 +44,14 @@ class SafeToolLoader:
         """tool_names 리스트에서 실제 Tool 객체들 생성"""
         if isinstance(tool_names, str):
             tool_names = [tool_names]
-        logger.info(f"도구 생성 요청: {tool_names}")
+        logger.info(f"도구생성 요청: {tool_names}")
         
         tools = []
         
         # mem0, memento, image_gen는 항상 기본 로드
         tools.extend(self._load_mem0())
         tools.extend(self._load_memento())
-        # tools.extend(self._load_image_manager())
+        tools.extend(self._load_image_manager())
         
         # 요청된 도구들 처리
         for name in tool_names:
