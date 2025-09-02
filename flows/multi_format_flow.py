@@ -394,9 +394,6 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             print("🎉 다중 포맷 생성 완료!")
             print("="*60)
             
-            # 이미지 플레이스홀더를 base64로 교체
-            await self._replace_image_placeholders()
-            
             # 최종 결과 DB 저장
             if self.state.todo_id and self.state.proc_inst_id:
                 all_results = {
@@ -418,41 +415,3 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         except Exception as e:
             self._handle_error("최종결과저장", e)
 
-    async def _replace_image_placeholders(self) -> None:
-        """모든 결과에서 이미지 플레이스홀더를 base64로 교체"""
-        try:
-            from tools.image_manager import ImageGenTool
-            
-            # ImageGenTool 인스턴스 생성
-            image_tool = ImageGenTool()
-            
-            # 리포트 내용 교체
-            for key, content in self.state.report_contents.items():
-                if isinstance(content, str):
-                    self.state.report_contents[key] = image_tool.replace_placeholders_with_base64(content)
-            
-            # 슬라이드 내용 교체
-            for key, content in self.state.slide_contents.items():
-                if isinstance(content, str):
-                    self.state.slide_contents[key] = image_tool.replace_placeholders_with_base64(content)
-            
-            # 텍스트 내용 교체
-            for key, content in self.state.text_contents.items():
-                if isinstance(content, str):
-                    self.state.text_contents[key] = image_tool.replace_placeholders_with_base64(content)
-                elif isinstance(content, dict):
-                    # 딕셔너리 내부의 문자열 값들도 교체
-                    for sub_key, sub_content in content.items():
-                        if isinstance(sub_content, str):
-                            content[sub_key] = image_tool.replace_placeholders_with_base64(sub_content)
-            
-            print("🖼️ 이미지 플레이스홀더를 base64로 교체 완료")
-            
-            # 이미지 파일 정리 (base64 교체 완료 후)
-            deleted_count = image_tool.cleanup_all_images(force=True)
-            if deleted_count > 0:
-                print(f"🗑️ 임시 이미지 파일 {deleted_count}개 정리 완료")
-            
-        except Exception as e:
-            print(f"⚠️ 이미지 플레이스홀더 교체 실패: {e}")
-            # 실패해도 계속 진행

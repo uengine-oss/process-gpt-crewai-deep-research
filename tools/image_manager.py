@@ -1,14 +1,14 @@
 import os
+import base64
 import logging
 import traceback
-import base64
 from typing import Type, Optional
 from pydantic import BaseModel, Field, PrivateAttr
 from crewai.tools import BaseTool
 from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
-import requests
+from supabase import create_client
 
 # OpenAI Python SDK v1 (>=1.x) 기준
 from openai import OpenAI
@@ -31,231 +31,155 @@ def _handle_error(operation: str, error: Exception) -> str:
 class ImageGenSchema(BaseModel):
     prompt: str = Field(..., description="생성할 이미지 설명")
     filename: Optional[str] = Field(None, description="저장 파일명(.png 권장). 없으면 자동 생성")
-    size: str = Field("512x512", description="이미지 크기 (1024x1024)")
-    quality: str = Field("standard", description="이미지 품질 (standard | hd)")
+    size: str = Field(
+        "1024x1024",
+        description="이미지 크기 (예: 1024x1024 | 1536x1024 | 1024x1536)"
+    )
+    quality: str = Field(
+        "medium",
+        description="이미지 품질 (low | medium | high)"
+    )
 
 # ============================================================================
 # Tool
 # ============================================================================
 class ImageGenTool(BaseTool):
-    """🎨 DALL·E 3 기반 이미지 생성 + 저장 툴 (컨텍스트 최적화)"""
+    """🎨 GPT-Image (gpt-image-1) 기반 이미지 생성 + Supabase Storage 업로드 툴"""
     name: str = "image_gen"
     description: str = (
-        "OpenAI DALL·E 3로 이미지를 생성해 로컬에 저장하고 플레이스홀더를 반환합니다.\n\n"
+        "OpenAI gpt-image-1로 이미지를 생성해 Supabase Storage에 업로드하고 URL을 반환합니다.\n\n"
         "⚠️ 필수 매개변수:\n"
         "- prompt (필수): 생성할 이미지에 대한 구체적이고 상세한 설명\n"
         "  예시: '전문적인 비즈니스 회의실에서 팀원들이 차트를 보고 토론하는 모습, 현대적이고 깔끔한 스타일'\n\n"
         "선택 매개변수:\n"
         "- filename (선택): 저장 파일명(.png 권장). 없으면 자동 생성\n"
-        "- size (선택): 이미지 크기 (기본값: 1024x1024)\n"
-        "- quality (선택): 이미지 품질 (standard | hd, 기본값: standard)\n\n"
+        "- size (선택): 이미지 크기 (기본값: 1024x1024; 1536x1024 | 1024x1536 권장)\n"
+        "- quality (선택): 이미지 품질 (low | medium | high, 기본값: medium)\n\n"
         "사용 예시:\n"
         "image_gen(prompt='전문적인 데이터 분석 차트와 그래프가 있는 현대적인 대시보드, 파란색과 흰색 톤의 깔끔한 디자인')\n\n"
-        "반환값: 이미지 플레이스홀더 (마크다운 이미지 태그 형태, 컨텍스트 절약용)\n"
-        "후처리: 최종 결과 저장 시 플레이스홀더가 자동으로 base64로 교체됩니다."
+        "반환값: Supabase Storage URL (이미지 접근 가능한 공개 URL)"
     )
     args_schema: Type[ImageGenSchema] = ImageGenSchema
 
-    # 🔒 Pydantic 모델의 private 속성으로 선언 (여기에만 실제 객체를 담아야 함)
     _client: OpenAI = PrivateAttr()
-    _output_dir: Path = PrivateAttr()
-    _max_files: int = PrivateAttr(default=20)
+    _supabase: Optional[object] = PrivateAttr(default=None)
 
     def __init__(self, **data):
         super().__init__(**data)
 
+        # OpenAI 클라이언트 초기화
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("❌ OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
         self._client = OpenAI(api_key=api_key)
 
-        # 출력 디렉토리 설정 (우선순위: MCP_OUTPUT_DIR → PGPT_WORK_DIR → ./outputs/images)
-        output_dir_env = os.getenv("MCP_OUTPUT_DIR") or os.getenv("PGPT_WORK_DIR")
-        if output_dir_env:
-            self._output_dir = Path(output_dir_env)
+        # Supabase 클라이언트 초기화
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        if supabase_url and supabase_key:
+            try:
+                self._supabase = create_client(supabase_url, supabase_key)
+                logger.info("✅ Supabase 클라이언트 초기화 완료")
+            except Exception as e:
+                logger.warning(f"❌ Supabase 클라이언트 초기화 실패: {e}")
+                self._supabase = None
         else:
-            # 이 파일이 tools/ 아래라면 부모의 부모 기준
-            self._output_dir = Path(__file__).resolve().parents[1] / "outputs" / "images"
-        self._output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 파일 관리 설정
-        self._max_files = 20  # 최대 20개 파일 유지
+            logger.warning("❌ SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY 환경 변수가 설정되지 않았습니다.")
 
-    def _download_image(self, url: str, filename: str) -> str:
-        """이미지 다운로드 및 512x512로 리사이즈하여 저장"""
+    def _upload_to_supabase(self, image_data: bytes, filename: str) -> Optional[str]:
+        """이미지를 512x512로 리사이즈 후 Supabase Storage에 업로드하고 공개 URL 반환"""
+        if not self._supabase:
+            logger.error("Supabase 클라이언트가 초기화되지 않았습니다.")
+            return None
+            
         try:
-            from PIL import Image
-            from io import BytesIO
+            bucket_name = "task-image"
             
-            # 이미지 다운로드
-            resp = requests.get(url, timeout=60)
-            resp.raise_for_status()
-            
-            # PIL로 이미지 열기
-            img = Image.open(BytesIO(resp.content))
-            
-            # 512x512로 리사이즈 (고품질 다운샘플링)
-            img_resized = img.resize((512, 512), Image.LANCZOS)
-            
-            # 리사이즈된 이미지 저장
-            filepath = self._output_dir / filename
-            img_resized.save(filepath, "PNG", optimize=True)
-            
-            logger.info(f"이미지 리사이즈 완료: {img.size} → 512x512")
-            return str(filepath)
-            
-        except ImportError:
-            # PIL이 없는 경우 원본 그대로 저장
-            logger.warning("PIL(Pillow)이 설치되지 않아 원본 크기로 저장됩니다.")
-            resp = requests.get(url, timeout=60)
-            resp.raise_for_status()
-            filepath = self._output_dir / filename
-            with open(filepath, "wb") as f:
-                f.write(resp.content)
-            return str(filepath)
-        except Exception as e:
-            # 기타 오류 시 원본 그대로 저장
-            logger.error(f"이미지 리사이즈 실패, 원본 저장: {e}")
-            resp = requests.get(url, timeout=60)
-            resp.raise_for_status()
-            filepath = self._output_dir / filename
-            with open(filepath, "wb") as f:
-                f.write(resp.content)
-            return str(filepath)
-
-    def _encode_image_to_base64(self, image_path: str) -> str:
-        """이미지를 base64로 인코딩"""
-        try:
-            with open(image_path, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                return encoded_string
-        except Exception as e:
-            logger.error(f"이미지 base64 인코딩 실패: {e}")
-            return ""
-
-
-    def _cleanup_old_files(self):
-        """파일 개수가 최대치에 도달하면 모든 파일 삭제"""
-        try:
-            # 이미지 파일들만 필터링 (png, jpg, jpeg)
-            image_files = []
-            for ext in ['*.png', '*.jpg', '*.jpeg']:
-                image_files.extend(self._output_dir.glob(ext))
-            
-            # 파일 개수가 최대 개수에 도달하면 모든 파일 삭제
-            if len(image_files) >= self._max_files:
-                deleted_count = 0
-                for file_path in image_files:
-                    try:
-                        file_path.unlink()
-                        deleted_count += 1
-                    except Exception as e:
-                        logger.warning(f"파일 삭제 실패 {file_path.name}: {e}")
+            # 이미지 리사이즈 처리
+            try:
+                from PIL import Image
+                from io import BytesIO
                 
-                logger.info(f"파일 정리 완료: {deleted_count}개 파일 모두 삭제")
+                # PIL로 이미지 열기
+                img = Image.open(BytesIO(image_data))
                 
-        except Exception as e:
-            logger.error(f"파일 정리 중 오류: {e}")
-
-    def cleanup_all_images(self, force: bool = False) -> int:
-        """모든 이미지 파일 강제 삭제 (프로세스 완료 시 호출)"""
-        try:
-            # 이미지 파일들만 필터링 (png, jpg, jpeg)
-            image_files = []
-            for ext in ['*.png', '*.jpg', '*.jpeg']:
-                image_files.extend(self._output_dir.glob(ext))
-            
-            if not image_files:
-                logger.info("삭제할 이미지 파일이 없습니다.")
-                return 0
-            
-            # 강제 삭제 또는 최대 개수 초과 시 삭제
-            if force or len(image_files) >= self._max_files:
-                deleted_count = 0
-                for file_path in image_files:
-                    try:
-                        file_path.unlink()
-                        deleted_count += 1
-                    except Exception as e:
-                        logger.warning(f"파일 삭제 실패 {file_path.name}: {e}")
+                # 512x512로 리사이즈 (고품질 다운샘플링)
+                img_resized = img.resize((512, 512), Image.LANCZOS)
                 
-                logger.info(f"🗑️ 이미지 파일 정리 완료: {deleted_count}개 파일 삭제")
-                return deleted_count
+                # 리사이즈된 이미지를 바이트로 변환
+                img_byte_arr = BytesIO()
+                img_resized.save(img_byte_arr, format='PNG', optimize=True)
+                img_byte_arr = img_byte_arr.getvalue()
+                
+                logger.info(f"이미지 리사이즈 완료: {img.size} → 512x512")
+                image_data = img_byte_arr
+                
+            except ImportError:
+                # PIL이 없는 경우 원본 그대로 사용
+                logger.warning("PIL(Pillow)이 설치되지 않아 원본 크기로 저장됩니다.")
+            except Exception as e:
+                # 기타 오류 시 원본 그대로 사용
+                logger.error(f"이미지 리사이즈 실패, 원본 사용: {e}")
+            
+            # Supabase Storage에 업로드
+            result = self._supabase.storage.from_(bucket_name).upload(filename, image_data)
+            
+            if result:
+                # 공개 URL 생성
+                public_url = self._supabase.storage.from_(bucket_name).get_public_url(filename)
+                logger.info(f"✅ Supabase Storage 업로드 완료: {public_url}")
+                return public_url
             else:
-                logger.info(f"이미지 파일 개수({len(image_files)})가 최대치({self._max_files}) 미만이므로 삭제하지 않습니다.")
-                return 0
+                logger.error("Supabase Storage 업로드 실패")
+                return None
                 
         except Exception as e:
-            logger.error(f"이미지 파일 정리 중 오류: {e}")
-            return 0
+            logger.error(f"Supabase Storage 업로드 중 오류: {e}")
+            return None
 
     def _run(self, prompt: str, filename: Optional[str] = None,
-             size: str = "1024x1024", quality: str = "standard") -> str:
+             size: str = "1024x1024", quality: str = "medium") -> str:
         try:
             # 매개변수 검증
             if not prompt or prompt.strip() == "":
-                return "❌ 오류: prompt 매개변수가 비어있습니다. 구체적인 이미지 설명을 제공해주세요."
+                return "❌ 오류: prompt 매개변수가 비어있습니다."
             
-            if prompt.lower() in ["null", "none", "undefined", ""]:
-                return "❌ 오류: prompt 매개변수가 유효하지 않습니다. 구체적인 이미지 설명을 제공해주세요."
+            # Supabase 설정 확인
+            if not self._supabase:
+                return "❌ 오류: Supabase가 설정되지 않았습니다. SUPABASE_URL과 SUPABASE_KEY 환경 변수를 설정해주세요."
             
             # 파일명 자동 생성
             if not filename:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"generated_image_{timestamp}.png"
 
-            logger.info(f"[image_gen] prompt='{prompt}', size={size}, quality={quality}, filename={filename}")
+            logger.info(f"[image_gen] prompt='{prompt}', size={size}, quality={quality}")
 
-            # 이미지 생성 (DALL·E 3 고정)
+            # 이미지 생성 (gpt-image-1, b64_json 응답 처리)
             response = self._client.images.generate(
-                model="dall-e-3",
+                model="gpt-image-1",
                 prompt=prompt,
                 size=size,
                 quality=quality,
                 n=1
             )
-            image_url = response.data[0].url
+            b64 = response.data[0].b64_json
+            image_data = base64.b64decode(b64)
 
-            # 다운로드 & 저장
-            saved_path = self._download_image(image_url, filename)
+            # Supabase Storage에 업로드
+            supabase_url = self._upload_to_supabase(image_data, filename)
             
-            # 오래된 파일 정리 (최대 20개 유지)
-            self._cleanup_old_files()
-            
-            # 플레이스홀더 반환 (컨텍스트 절약)
-            return f"![{filename}](IMAGE_PLACEHOLDER:{filename})"
+            if supabase_url:
+                # 환경 변수에서 Supabase URL 가져오기
+                supabase_url_env = os.getenv("SUPABASE_URL")
+                if supabase_url_env:
+                    # 환경 변수 값들을 그대로 사용하여 URL 구성
+                    return f"![{filename}]({supabase_url_env}/storage/v1/object/public/task-image/{filename})"
+                else:
+                    # 환경 변수가 없는 경우 원본 URL 사용
+                    return f"![{filename}]({supabase_url})"
+            else:
+                return f"❌ 이미지 업로드 실패: {filename}"
 
         except Exception as e:
             return _handle_error("image_gen", e)
-
-    def replace_placeholders_with_base64(self, content: str) -> str:
-        """플레이스홀더를 base64로 교체하는 후처리 메서드"""
-        import re
-        
-        try:
-            # IMAGE_PLACEHOLDER:filename 패턴 찾기
-            pattern = r'!\[([^\]]+)\]\(IMAGE_PLACEHOLDER:([^)]+)\)'
-            
-            def replace_placeholder(match):
-                alt_text = match.group(1)
-                filename = match.group(2)
-                
-                # 파일 경로 구성
-                image_path = self._output_dir / filename
-                
-                if image_path.exists():
-                    # base64 인코딩
-                    base64_data = self._encode_image_to_base64(str(image_path))
-                    if base64_data:
-                        return f"![{alt_text}](data:image/png;base64,{base64_data})"
-                    else:
-                        return f"![{alt_text}](이미지 로드 실패: {filename})"
-                else:
-                    return f"![{alt_text}](이미지 파일 없음: {filename})"
-            
-            # 모든 플레이스홀더 교체
-            return re.sub(pattern, replace_placeholder, content)
-            
-        except Exception as e:
-            logger.error(f"플레이스홀더 교체 실패: {e}")
-            return content

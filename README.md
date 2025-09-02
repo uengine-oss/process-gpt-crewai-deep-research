@@ -67,8 +67,13 @@ AgentMonitoring/
    # .env 파일 생성
    OPENAI_API_KEY=your_openai_api_key
    SUPABASE_URL=your_supabase_url  # 선택사항
-   SUPABASE_KEY=your_supabase_key  # 선택사항
+   SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key  # 선택사항
    ```
+
+2. **Supabase Storage 설정** (이미지 URL 기능 사용 시)
+   - Supabase 프로젝트에서 Storage 버킷 생성: `images`
+   - 버킷을 public으로 설정하여 공개 URL 접근 허용
+   - RLS(Row Level Security) 정책 설정 (필요시)
 
 2. **데이터베이스 설정** (Supabase 사용 시)
    ```sql

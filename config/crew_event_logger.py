@@ -164,40 +164,10 @@ class CrewAIEventLogger:
             except Exception as e:
                 logger.warning(f"데이터 직렬화 실패 ({key}): {e}")
                 safe_data[key] = f"[직렬화 실패: {type(value).__name__}]"
-        
-        # 이미지 플레이스홀더를 base64로 교체
-        safe_data = self._replace_image_placeholders_in_data(safe_data)
                 
         return safe_data
 
-    def _replace_image_placeholders_in_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """데이터 내의 이미지 플레이스홀더를 base64로 교체"""
-        try:
-            from tools.image_manager import ImageGenTool
-            
-            # ImageGenTool 인스턴스 생성
-            image_tool = ImageGenTool()
-            
-            # 딕셔너리 내의 모든 문자열 값에 대해 플레이스홀더 교체
-            for key, value in data.items():
-                if isinstance(value, str):
-                    data[key] = image_tool.replace_placeholders_with_base64(value)
-                elif isinstance(value, dict):
-                    # 중첩된 딕셔너리도 재귀적으로 처리
-                    data[key] = self._replace_image_placeholders_in_data(value)
-                elif isinstance(value, list):
-                    # 리스트 내의 문자열도 처리
-                    for i, item in enumerate(value):
-                        if isinstance(item, str):
-                            value[i] = image_tool.replace_placeholders_with_base64(item)
-                        elif isinstance(item, dict):
-                            value[i] = self._replace_image_placeholders_in_data(item)
-            
-            return data
-            
-        except Exception as e:
-            logger.warning(f"이미지 플레이스홀더 교체 실패: {e}")
-            return data
+
 
     # ============================================================================
     # 데이터베이스 저장
@@ -273,9 +243,6 @@ class CrewAIEventLogger:
             form_id = form_id or form_id_var.get()
             job_id = job_id or event_type
             
-            # 이미지 플레이스홀더를 base64로 교체
-            data = self._replace_image_placeholders_in_data(data)
-                        
             # 이벤트 레코드 생성 및 저장
             record = self._create_event_record(
                 event_type, data, job_id, crew_type, todo_id, proc_inst_id

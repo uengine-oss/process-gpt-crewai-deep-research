@@ -75,7 +75,8 @@ async def process_new_task(row: Dict):
 async def _prepare_task_inputs(row: Dict) -> Dict:
     """작업 입력 데이터 준비"""
     todo_id = row['id']
-    proc_inst_id = row.get('proc_inst_id')
+    proc_inst_id = row.get('root_proc_inst_id') or row.get('proc_inst_id') 
+    print("디버깅 proc_inst_id", proc_inst_id)
     
     # 이전 컨텍스트 요약 - 피드백과 이전결과물 분리 관리
     all_outputs = await fetch_done_data(proc_inst_id)
