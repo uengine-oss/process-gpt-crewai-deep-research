@@ -29,6 +29,8 @@ if not all([DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME]):
 
 CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+MEMENTO_SERVICE_URL = os.getenv("MEMENTO_SERVICE_URL", "http://memento-service:8005")
+
 def _handle_error(operation: str, error: Exception) -> str:
     """통합 에러 처리"""
     error_msg = f"❌ [{operation}] 오류 발생: {str(error)}"
@@ -154,7 +156,7 @@ class MementoQuerySchema(BaseModel):
     query: str = Field(..., description="검색 키워드 또는 질문")
 
 class MementoTool(BaseTool):
-    """사내 문서 검색을 수행하는 도구"""
+    """사내 문서 검색을 수행하는 도구 (이미지 검색 통합)"""
     name: str = "memento"
     description: str = (
         "🔒 보안 민감한 사내 문서 검색 도구\n\n"
@@ -162,10 +164,12 @@ class MementoTool(BaseTool):
         "• 보안 민감한 사내 기밀 문서\n"
         "• 대용량 사내 문서 및 정책 자료\n"
         "• 객관적이고 정확한 회사 내부 지식\n"
-        "• 업무 프로세스, 규정, 기술 문서\n\n"
+        "• 업무 프로세스, 규정, 기술 문서\n"
+        "• 문서와 연관된 이미지 자료 (document_images 테이블)\n\n"
         "검색 목적:\n"
         "- 작업지시사항을 올바르게 수행하기 위한 회사 정책/규정/프로세스/매뉴얼 확보\n"
-        "- 최신 버전의 표준과 가이드라인 확인\n\n"
+        "- 최신 버전의 표준과 가이드라인 확인\n"
+        "- 문서 내용을 보완하는 관련 이미지 자료 제공\n\n"
         "사용 지침:\n"
         "- 현재 작업/요청과 직접 연결된 문맥을 담아 자연어의 완전한 문장으로 질의하세요.\n"
         "- 문서 제목/버전/담당조직/기간/환경(프로덕션·스테이징·모듈 등) 조건을 명확히 포함하세요.\n"
@@ -184,25 +188,88 @@ class MementoTool(BaseTool):
     def _run(self, query: str) -> str:
         try:
             logger.info(f"Memento 문서 검색 시작: tenant_id='{self._tenant_id}', query='{query}'")
+            # 1. 기존 문서 검색 수행
             response = requests.post(
-                "http://memento.process-gpt.io/retrieve",
-                # "http://localhost:8005/retrieve",
-                json={"query": query, "options": {"tenant_id": self._tenant_id}}
+                f"{MEMENTO_SERVICE_URL}/retrieve",
+                json={"query": query, "tenant_id": self._tenant_id}
             )
+            
             if response.status_code != 200:
                 return f"API 오류: {response.status_code}"
+            
             data = response.json()
             if not data.get("response"):
                 return f"테넌트 '{self._tenant_id}'에서 '{query}' 검색 결과가 없습니다."
-            results = []
+            
             docs = data.get("response", [])
             logger.info(f"Memento 검색 결과 개수: {len(docs)}")
+            
+            # 2. 문서 결과 처리 및 이미지 검색
+            results = []
+            document_ids = set()
+            
             for doc in docs:
                 fname = doc.get('metadata', {}).get('file_name', 'unknown')
                 idx = doc.get('metadata', {}).get('chunk_index', 'unknown')
                 content = doc.get('page_content', '')
+                
+                # 문서 ID 추출 (metadata에서 document_id가 있다면)
+                doc_id = doc.get('metadata', {}).get('document_id')
+                if doc_id:
+                    document_ids.add(doc_id)
+                
                 results.append(f"📄 파일: {fname} (청크 #{idx})\n내용: {content}\n---")
-            return f"테넌트 '{self._tenant_id}'에서 '{query}' 검색 결과:\n\n" + "\n".join(results)
+            
+            # 3. 관련 이미지 검색
+            image_results = []
+            if document_ids:
+                image_results = self._search_related_images(list(document_ids))
+            
+            # 4. 결과 통합
+            final_result = f"테넌트 '{self._tenant_id}'에서 '{query}' 검색 결과:\n\n"
+            final_result += "\n".join(results)
+            
+            if image_results:
+                final_result += f"\n\n🖼️ 관련 이미지 ({len(image_results)}개):\n\n"
+                for i, img in enumerate(image_results, 1):
+                    final_result += f"**이미지 {i}**\n"
+                    final_result += f"- 문서 ID: {img['document_id']}\n"
+                    final_result += f"- 생성일: {img['created_at']}\n"
+                    final_result += f"- 이미지: ![이미지 {i}]({img['image_url']})\n\n"
+            
+            return final_result
+            
         except Exception as e:
             _handle_error("Memento문서검색", e)
             return f"검색 중 오류 발생: {e}"
+
+    def _search_related_images(self, document_ids: list) -> list:
+        """문서 ID 목록에 해당하는 이미지 검색"""
+        try:
+            from core.database import get_db_client
+            
+            supabase = get_db_client()
+            
+            # document_ids에 해당하는 이미지들 검색
+            result = supabase.table('document_images')\
+                .select('id, document_id, image_url, created_at')\
+                .in_('document_id', document_ids)\
+                .limit(10)\
+                .execute()
+            
+            images = result.data or []
+            image_results = []
+            
+            for img in images:
+                image_results.append({
+                    'document_id': img['document_id'],
+                    'image_url': img.get('image_url', ''),
+                    'created_at': img['created_at']
+                })
+            
+            logger.info(f"관련 이미지 {len(image_results)}개 발견")
+            return image_results
+            
+        except Exception as e:
+            logger.error(f"이미지 검색 중 오류: {e}")
+            return []
