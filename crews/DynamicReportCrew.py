@@ -6,6 +6,7 @@ from crewai import Agent, Crew, Process, Task
 from pydantic import PrivateAttr
 from tools.safe_tool_loader import SafeToolLoader
 from utils.context_manager import set_crew_context, reset_crew_context
+from llm_factory import create_llm
 
 # ============================================================================
 # 설정 및 초기화
@@ -88,19 +89,24 @@ class DynamicReportCrew:
         agent_role = self.agent_config.get("role", "Unknown Role")
         agent_goal = self.agent_config.get("goal", "Unknown Goal")
         agent_backstory = self.agent_config.get("persona", "Unknown Background")
-        llm_model = self.agent_config.get("model", "openai/gpt-4.1")
+        model_str = self.agent_config.get("model") or "gpt-4.1"
+        provider = model_str.split("/", 1)[0] if "/" in model_str else None
+        model_name = model_str.split("/", 1)[1] if "/" in model_str else model_str
 
         logger.info(f"👤 Agent 생성: {len(self.actual_tools)}개 도구 할당")
+
+        llm = create_llm(provider=provider, model=model_name, temperature=0.1)
         
         agent = AgentWithProfile(
             role=agent_role,
             goal=agent_goal,
             backstory=agent_backstory,
-            llm=llm_model,
+            llm=llm,
             tools=self.actual_tools,
             verbose=True,
             cache=True
         )
+        # CrewAI Agent는 pydantic 모델이므로 임의 속성 추가는 지양
         
         # 프로필 설정
         agent.profile = self.agent_config.get('agent_profile', '')

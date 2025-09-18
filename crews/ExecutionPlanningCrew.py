@@ -4,6 +4,7 @@ from functools import wraps
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from utils.context_manager import set_crew_context, reset_crew_context
+from llm_factory import create_llm
 
 # ============================================================================
 # 설정 및 초기화
@@ -35,11 +36,14 @@ class ExecutionPlanningCrew:
     @agent
     def dependency_analyzer(self) -> Agent:
         """폼 종속성을 분석하고 실행 계획을 수립하는 AI 에이전트입니다."""
-        return Agent(
+        llm = create_llm(model="gpt-4.1", temperature=0.1)
+        agent = Agent(
             config=self.agents_config['dependency_analyzer'],
             verbose=True,
-            cache=True
+            cache=True,
+            llm=llm
         )
+        return agent
 
     @task
     def create_execution_plan(self) -> Task:

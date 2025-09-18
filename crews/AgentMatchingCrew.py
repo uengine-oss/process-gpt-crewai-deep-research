@@ -4,6 +4,7 @@ from typing import Dict, Any
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from utils.context_manager import set_crew_context, reset_crew_context
+from llm_factory import create_llm
 
 # ============================================================================
 # 설정 및 초기화
@@ -41,11 +42,15 @@ class AgentMatchingCrew:
     @agent
     def toc_generator_and_agent_matcher(self) -> Agent:
         """보고서 TOC 생성 및 에이전트 매칭을 담당하는 전문가"""
-        return Agent(
+        # 기본 모델: gpt-4.1
+        llm = create_llm(model="gpt-4.1", temperature=0.1)
+        agent = Agent(
             config=self.agents_config['toc_generator_and_agent_matcher'],
             verbose=True,
-            cache=True
+            cache=True,
+            llm=llm
         )
+        return agent
 
     @task
     def design_activity_tasks(self) -> Task:

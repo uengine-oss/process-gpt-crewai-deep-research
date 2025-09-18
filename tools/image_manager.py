@@ -68,10 +68,11 @@ class ImageGenTool(BaseTool):
         super().__init__(**data)
 
         # OpenAI 클라이언트 초기화
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
+        # 환경변수 기반 초기화 (키 직접 전달 금지)
+        # OpenAI SDK는 환경변수(OPENAI_API_KEY, OPENAI_BASE 등)를 자동 인식함
+        if not os.getenv("OPENAI_API_KEY"):
             raise ValueError("❌ OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
-        self._client = OpenAI(api_key=api_key)
+        self._client = OpenAI()
 
         # Supabase 클라이언트 초기화
         supabase_url = os.getenv("SUPABASE_URL")

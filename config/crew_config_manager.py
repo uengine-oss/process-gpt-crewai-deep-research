@@ -1,13 +1,26 @@
 from crewai import Crew
-from crewai.utilities.events import CrewAIEventsBus
-from crewai.utilities.events.task_events import TaskStartedEvent, TaskCompletedEvent
-from crewai.utilities.events.agent_events import AgentExecutionStartedEvent, AgentExecutionCompletedEvent
-from crewai.utilities.events import ToolUsageStartedEvent, ToolUsageFinishedEvent, LLMCallStartedEvent, LLMCallCompletedEvent
 from .crew_event_logger import CrewAIEventLogger
 from crews.ExecutionPlanningCrew import ExecutionPlanningCrew
 from crews.AgentMatchingCrew import AgentMatchingCrew
 from crews.FormCrew import FormCrew
 from crews.SlideCrew import SlideCrew
+
+
+try:
+    # 최신 버전 (>=0.186.x) 경로
+    from crewai.events import CrewAIEventsBus
+    from crewai.events import (
+        TaskStartedEvent,      # ← 다만 최신 문서 이벤트 이름 확인 필요
+        TaskCompletedEvent,    # 예시이므로 실제 이름과 매핑되는지 확인
+        ToolUsageStartedEvent,
+        ToolUsageFinishedEvent,
+    )
+except ImportError:
+    # 구버전 (예: 0.175 이하) 경로
+    from crewai.utilities.events import CrewAIEventsBus
+    from crewai.utilities.events import TaskStartedEvent, TaskCompletedEvent
+    from crewai.utilities.events import ToolUsageStartedEvent, ToolUsageFinishedEvent
+
 
 # ============================================
 # 글로벌 상태 관리 (Singleton 패턴)
@@ -63,10 +76,8 @@ class CrewConfigManager:
     def _register_event_listeners(self) -> None:
         """이벤트 리스너 등록"""
         events = [
-            AgentExecutionStartedEvent, AgentExecutionCompletedEvent,
             TaskStartedEvent, TaskCompletedEvent,
-            ToolUsageStartedEvent, ToolUsageFinishedEvent,
-            LLMCallStartedEvent, LLMCallCompletedEvent
+            ToolUsageStartedEvent, ToolUsageFinishedEvent
         ]
         
         for evt in events:

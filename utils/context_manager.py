@@ -4,16 +4,15 @@ import traceback
 from typing import Any
 from contextvars import ContextVar
 from dotenv import load_dotenv
-import openai
 import logging
+from llm_factory import create_llm
 
 # ============================================================================
 # 초기화 및 설정
 # ============================================================================
 
-# 환경변수 로드 및 OpenAI 설정
+# 환경변수 로드
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +69,12 @@ def reset_crew_context(token_ct, token_td, token_pid, token_fid):
 
 import asyncio
 
-async def summarize_async(outputs: Any, feedbacks: Any, contents: Any = None) -> tuple[str, str]:
-    """LLM으로 컨텍스트 요약 - 병렬 처리로 별도 반환 (비동기)"""
+async def summarize_async(outputs: Any, feedbacks: Any, contents: Any = None, agent_info: Any = None) -> tuple[str, str]:
+    """LLM으로 컨텍스트 요약 - 병렬 처리로 별도 반환 (비동기)
+
+    기본은 첫 번째 에이전트의 model을 사용하고, 없으면 gpt-4.1 사용.
+    agent_info.model 형식이 "provider/model"이면 분리하여 처리.
+    """
     try:
         logger.info("요약을 위한 LLM 병렬 호출 시작")
         
@@ -80,8 +83,18 @@ async def summarize_async(outputs: Any, feedbacks: Any, contents: Any = None) ->
         feedbacks_str = _convert_to_string(feedbacks) if any(item for item in (feedbacks or []) if item and item != {}) else ""
         contents_str = _convert_to_string(contents) if contents and contents != {} else ""
         
+        # 요약용 LLM 생성 (agent_info 기반)
+        provider = None
+        model_name = "gpt-4.1"
+        if isinstance(agent_info, list) and agent_info:
+            ms = agent_info[0].get("model")
+            if ms:
+                provider = ms.split("/", 1)[0] if "/" in ms else None
+                model_name = ms.split("/", 1)[1] if "/" in ms else ms
+        llm = create_llm(provider=provider, model=model_name, temperature=0.1)
+        
         # 병렬 처리
-        output_summary, feedback_summary = await _summarize_parallel(outputs_str, feedbacks_str, contents_str)
+        output_summary, feedback_summary = await _summarize_parallel(outputs_str, feedbacks_str, contents_str, llm)
         
         logger.info(f"이전결과 요약 완료: {len(output_summary)}자, 피드백 요약 완료: {len(feedback_summary)}자")
         return output_summary, feedback_summary
@@ -90,21 +103,21 @@ async def summarize_async(outputs: Any, feedbacks: Any, contents: Any = None) ->
         handle_error("요약처리", e)
         return "", ""
 
-async def _summarize_parallel(outputs_str: str, feedbacks_str: str, contents_str: str = "") -> tuple[str, str]:
+async def _summarize_parallel(outputs_str: str, feedbacks_str: str, contents_str: str, llm) -> tuple[str, str]:
     """병렬로 요약 처리 - 별도 반환"""
     tasks = []
     
     # 1. 이전 결과물 요약 태스크 (데이터가 있을 때만)
     if outputs_str and outputs_str.strip():
         output_prompt = _create_output_summary_prompt(outputs_str)
-        tasks.append(_call_openai_api_async(output_prompt, "이전 결과물"))
+        tasks.append(_ainvoke_once(llm, output_prompt, _get_output_system_prompt()))
     else:
         tasks.append(_create_empty_task(""))
     
     # 2. 피드백 요약 태스크 (피드백 또는 현재 결과물이 있을 때만)
     if (feedbacks_str and feedbacks_str.strip()) or (contents_str and contents_str.strip()):
         feedback_prompt = _create_feedback_summary_prompt(feedbacks_str, contents_str)
-        tasks.append(_call_openai_api_async(feedback_prompt, "피드백"))
+        tasks.append(_ainvoke_once(llm, feedback_prompt, _get_feedback_system_prompt()))
     else:
         tasks.append(_create_empty_task(""))
     
@@ -291,33 +304,15 @@ def _get_feedback_system_prompt() -> str:
 
 목표: 다음 작업자가 즉시 정확하고 효과적인 작업을 수행할 수 있도록 하는 완벽한 가이드 제공"""
 
-
-
-async def _call_openai_api_async(prompt: str, task_name: str) -> str:
-    """OpenAI API 병렬 호출"""
+async def _ainvoke_once(llm, prompt: str, system_prompt: str) -> str:
+    """하나의 프롬프트를 비동기로 호출하여 결과 텍스트 반환"""
     try:
-        # OpenAI 클라이언트를 async로 생성
-        client = openai.AsyncOpenAI()
-        
-        # 작업 유형에 따른 시스템 프롬프트 선택
-        if task_name == "피드백":
-            system_prompt = _get_feedback_system_prompt()
-        else:  # "이전 결과물" 등 다른 모든 경우
-            system_prompt = _get_output_system_prompt()
-        
-        response = await client.chat.completions.create(
-            model="gpt-4.1",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.1
-        )
-        
-        result = response.choices[0].message.content.strip()
-        logger.info(f"{task_name} 요약 완료: {len(result)}자")
-        return result
-        
+        response = await llm.ainvoke([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ])
+        content = getattr(response, "content", "")
+        return content.strip() if isinstance(content, str) else str(content).strip()
     except Exception as e:
-        handle_error(f"{task_name} OpenAI API 호출", e)
+        handle_error("요약 LLM 호출", e)
         return "요약 생성 실패"
