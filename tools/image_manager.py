@@ -8,6 +8,7 @@ from crewai.tools import BaseTool
 from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
+import uuid
 from supabase import create_client
 
 # OpenAI Python SDK v1 (>=1.x) 기준
@@ -149,10 +150,11 @@ class ImageGenTool(BaseTool):
             if not self._supabase:
                 return "❌ 오류: Supabase가 설정되지 않았습니다. SUPABASE_URL과 SUPABASE_KEY 환경 변수를 설정해주세요."
             
-            # 파일명 자동 생성
+            # 파일명 자동 생성 (충돌 방지용 유니크 suffix 포함)
             if not filename:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"generated_image_{timestamp}.png"
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                unique = uuid.uuid4().hex[:8]
+                filename = f"generated_image_{timestamp}_{unique}.png"
 
             logger.info(f"[image_gen] prompt='{prompt}', size={size}, quality={quality}")
 
