@@ -38,10 +38,10 @@ class AgentWithProfile(Agent):
 class DynamicReportCrew:
     """AgentMatchingCrew 결과물에서 동적으로 Agent와 Task를 생성하는 크루"""
     
-    def __init__(self, section_data: Dict[str, Any], topic: str, previous_outputs: Optional[str] = None, previous_feedback: Optional[str] = None):
+    def __init__(self, section_data: Dict[str, Any], topic: str, query: Optional[str] = None, feedback: Optional[str] = None):
         """초기화 및 설정"""
-        self.previous_outputs = previous_outputs
-        self.previous_feedback = previous_feedback
+        self.query = query
+        self.feedback = feedback
         self.topic = topic
         self.toc_info = section_data.get("toc", {})
         self.agent_config = section_data.get("agent", {})
@@ -73,8 +73,8 @@ class DynamicReportCrew:
             
             # 컨텍스트 정보를 crew 인스턴스에 설정
             crew._section_title = self.section_title
-            crew.previous_outputs = self.previous_outputs
-            crew.previous_feedback = self.previous_feedback
+            crew.query = self.query
+            crew.feedback = self.feedback
             
             return crew
         except Exception as e:
@@ -139,14 +139,14 @@ class DynamicReportCrew:
     # ============================================================================
 
     def _build_context_info(self) -> str:
-        """이전 컨텍스트 정보 구성 - 피드백과 이전 결과물 분리"""
+        """컨텍스트 정보 구성 - Query(지침과 내용)와 피드백 분리"""
         context_parts = []
         
-        if self.previous_outputs:
-            context_parts.append(f"[이전 결과물]\n{self.previous_outputs}")
-        
-        if self.previous_feedback:
-            context_parts.append(f"[피드백]\n{self.previous_feedback}")
+        if self.query:
+            context_parts.append(f"[작업 지침 및 내용]\n{self.query}")
+            
+        if self.feedback:
+            context_parts.append(f"[피드백]\n{self.feedback}")
         
         if not context_parts:
             return ""
@@ -192,6 +192,7 @@ class DynamicReportCrew:
         
         **🎯 도구 활용 원칙:**
         - **query 명확성**: 구체적이고 명확한 검색어 사용 ⚠️ CRITICAL: null, 빈값, 공백, "null", "None" 등 절대 금지!
+          * DB 관련 도구, 예 : supabase 관련 툴은 사용하지마세요. 자제하도록 하세요  
           * ✅ 올바른 예시: "AI 기술 동향 2024", "데이터베이스 최적화 구체적 방법", "클라우드 보안 실제 사례"
           * ❌ 잘못된 예시: null, "", " ", "null", "None", undefined
         - **객관적 정보 우선**: 수치, 사물명, 인물명, 날짜 등 구체적 정보는 mem0/memento에서 우선 검색
@@ -226,10 +227,10 @@ class DynamicReportCrew:
         return expected_output + f"""
 
         **📊 섹션별 품질 기준:**
+        - **작업 지침 기반 작성**: [작업 지침 및 내용]을 기반으로 섹션 '{self.section_title}' 내용 작성
         - **피드백 최우선 통합**: [피드백] 내용을 섹션 '{self.section_title}'에 적극 반영하고 개선사항 적용
-        - **이전 결과물 연결**: [이전 결과물]의 문맥을 파악하여 자연스럽게 연결되는 내용 구성
-        - **분리된 활용**: 피드백과 이전 결과물을 각각 분석하여 목적에 맞게 활용
-        - **분량**: 최소 3,000-4,000단어 이상의 상세하고 전문적인 내용
+        - **분리된 활용**: 작업 지침과 피드백을 각각 분석하여 목적에 맞게 활용
+        - **분량**: 최소 800-1,500단어의 상세하고 전문적인 내용
         - **심층성**: 표면적 설명이 아닌 해당 분야 전문가 수준의 심층 분석
         - **실무성**: 바로 활용 가능한 구체적 사례와 예시 다수 포함
         - **포괄성**: 관련 법규, 절차, 모범 사례, 주의사항 종합적 다룸
@@ -259,8 +260,8 @@ class WrappedCrew(Crew):
     """컨텍스트 관리와 로깅이 추가된 크루"""
 
     _section_title: str = PrivateAttr(default=None)
-    previous_outputs: Optional[str] = None
-    previous_feedback: Optional[str] = None
+    query: Optional[str] = None
+    feedback: Optional[str] = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -315,15 +316,15 @@ class WrappedCrew(Crew):
     def _log_start(self, inputs):
         """시작 로그"""
         logger.info(f"🚀 DynamicReportCrew 시작: section={self._section_title}")
-        if hasattr(self, 'previous_outputs') and self.previous_outputs:
-            outputs_snippet = str(self.previous_outputs)[:100]
-            logger.info(f"📄 이전 결과물: {outputs_snippet}...")
-        if hasattr(self, 'previous_feedback') and self.previous_feedback:
-            feedback_snippet = str(self.previous_feedback)[:100]
+        if hasattr(self, 'query') and self.query:
+            query_snippet = str(self.query)[:100]
+            logger.info(f"📄 작업 지침 및 내용: {query_snippet}...")
+        if hasattr(self, 'feedback') and self.feedback:
+            feedback_snippet = str(self.feedback)[:100]
             logger.info(f"💬 피드백: {feedback_snippet}...")
-        if not hasattr(self, 'previous_outputs') or not self.previous_outputs:
-            logger.info("📄 이전 결과물: 없음")
-        if not hasattr(self, 'previous_feedback') or not self.previous_feedback:
+        if not hasattr(self, 'query') or not self.query:
+            logger.info("📄 작업 지침 및 내용: 없음")
+        if not hasattr(self, 'feedback') or not self.feedback:
             logger.info("💬 피드백: 없음")
 
     def _log_completion(self):

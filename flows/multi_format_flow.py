@@ -36,8 +36,8 @@ class MultiFormatState(BaseModel):
     todo_id: Optional[str] = None
     proc_inst_id: Optional[str] = None
     agent_info: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
-    previous_outputs: str = ""  # 이전 결과물 요약 (별도 관리)
-    previous_feedback: str = ""  # 피드백 요약 (별도 관리)
+    query: str = ""  # query 필드값 (output 관련 지침 포함)
+    feedback: str = ""  # feedback 컬럼값
     proc_form_id: Optional[str] = None
     form_html: Optional[str] = None
 
@@ -97,7 +97,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             cleaned_text = clean_json_response(raw_text)
             parsed_data = json.loads(cleaned_text)
             plan_data = parsed_data.get('execution_plan', {})
-            self.state.execution_plan = ExecutionPlan.parse_obj(plan_data)
+            self.state.execution_plan = ExecutionPlan.model_validate(plan_data)
             
             return self.state.execution_plan
             
@@ -151,8 +151,8 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         result = await crew.kickoff_async(inputs={
             "topic": self.state.topic,
             "user_info": self.state.user_info,
-            "previous_outputs": self.state.previous_outputs,  # 이전 결과물
-            "previous_feedback": self.state.previous_feedback,  # 피드백
+            "query": self.state.query,  # query 필드값
+            "feedback": self.state.feedback,  # feedback 컬럼값
             "available_agents": available_agents,
             "todo_id": self.state.todo_id,
             "proc_inst_id": self.state.proc_inst_id
@@ -214,16 +214,16 @@ class MultiFormatFlow(Flow[MultiFormatState]):
         crew = DynamicReportCrew(
             section, 
             self.state.topic, 
-            previous_outputs=self.state.previous_outputs,
-            previous_feedback=self.state.previous_feedback
+            query=self.state.query,
+            feedback=self.state.feedback
         )
         result = await crew.create_crew().kickoff_async(inputs={
             "todo_id": self.state.todo_id,
             "proc_inst_id": self.state.proc_inst_id,
             "report_form_id": report_key,
             "user_info": self.state.user_info,
-            "previous_outputs": self.state.previous_outputs,  # 이전 결과물
-            "previous_feedback": self.state.previous_feedback  # 피드백
+            "query": self.state.query,  # query 필드값
+            "feedback": self.state.feedback  # feedback 컬럼값
         })
         return getattr(result, 'raw', result)
 
@@ -289,7 +289,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             
             # 이전 결과물 기반 슬라이드 생성
             else:
-                await self._create_slides(self.state.previous_outputs)
+                await self._create_slides(self.state.query)
                 
             return self.state.slide_contents
             
@@ -308,7 +308,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             
             result = await crew.kickoff_async(inputs={
                 'report_content': content,  # 리포트 내용 또는 이전 결과물
-                'previous_feedback': self.state.previous_feedback,  # 피드백 (별도)
+                'feedback': self.state.feedback,  # feedback 컬럼값
                 'user_info': self.state.user_info,
                 'todo_id': self.state.todo_id,
                 'proc_inst_id': self.state.proc_inst_id,
@@ -329,7 +329,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
             if self.state.report_contents:
                 content = self.state.report_contents  # 리포트 내용
             else:
-                content = self.state.previous_outputs or ""  # 이전 결과물
+                content = self.state.query or ""  # query 필드값
             
             # 실행계획의 모든 text_phase form들에 매칭되는 form_type들을 한번에 수집
             all_target_form_types = []
@@ -355,7 +355,7 @@ class MultiFormatFlow(Flow[MultiFormatState]):
 
         result = await crew.kickoff_async(inputs={
             'report_content': content,  # 리포트 내용 또는 이전 결과물
-            'previous_feedback': self.state.previous_feedback,  # 피드백 (별도)
+            'feedback': self.state.feedback,  # feedback 컬럼값
             'topic': self.state.topic,
             'user_info': self.state.user_info,
             'todo_id': self.state.todo_id,

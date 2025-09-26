@@ -77,7 +77,7 @@ class ImageGenTool(BaseTool):
 
         # Supabase 클라이언트 초기화
         supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
         if supabase_url and supabase_key:
             try:
                 self._supabase = create_client(supabase_url, supabase_key)
@@ -123,17 +123,35 @@ class ImageGenTool(BaseTool):
                 # 기타 오류 시 원본 그대로 사용
                 logger.error(f"이미지 리사이즈 실패, 원본 사용: {e}")
             
-            # Supabase Storage에 업로드
-            result = self._supabase.storage.from_(bucket_name).upload(filename, image_data)
-            
-            if result:
-                # 공개 URL 생성
-                public_url = self._supabase.storage.from_(bucket_name).get_public_url(filename)
-                logger.info(f"✅ Supabase Storage 업로드 완료: {public_url}")
-                return public_url
-            else:
-                logger.error("Supabase Storage 업로드 실패")
-                return None
+            # 파일명 중복 처리
+            original_filename = filename
+            counter = 1
+            while True:
+                try:
+                    # Supabase Storage에 업로드 시도
+                    result = self._supabase.storage.from_(bucket_name).upload(filename, image_data)
+                    
+                    if result:
+                        # 공개 URL 생성
+                        public_url = self._supabase.storage.from_(bucket_name).get_public_url(filename)
+                        logger.info(f"✅ Supabase Storage 업로드 완료: {public_url}")
+                        return public_url
+                    else:
+                        logger.error("Supabase Storage 업로드 실패")
+                        return None
+                        
+                except Exception as upload_error:
+                    # 중복 파일 오류인지 확인
+                    if "Duplicate" in str(upload_error) or "already exists" in str(upload_error):
+                        # 파일명에 숫자 suffix 추가
+                        name, ext = os.path.splitext(original_filename)
+                        filename = f"{name}_{counter}{ext}"
+                        counter += 1
+                        logger.info(f"파일명 중복으로 인한 재시도: {filename}")
+                        continue
+                    else:
+                        # 다른 오류인 경우 그대로 전파
+                        raise upload_error
                 
         except Exception as e:
             logger.error(f"Supabase Storage 업로드 중 오류: {e}")

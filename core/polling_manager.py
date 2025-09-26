@@ -5,11 +5,9 @@ import os
 import sys
 import traceback
 from typing import Optional, Dict
-from utils.context_manager import summarize_async
 from .database import (
     initialize_db, 
     fetch_pending_task, 
-    fetch_done_data, 
     fetch_task_status,
     fetch_participants_info,
     fetch_form_types
@@ -78,20 +76,8 @@ async def _prepare_task_inputs(row: Dict) -> Dict:
     proc_inst_id = row.get('root_proc_inst_id') or row.get('proc_inst_id') 
     print("디버깅 proc_inst_id", proc_inst_id)
     
-    # 이전 컨텍스트 요약 - 피드백과 이전결과물 분리 관리
-    all_outputs = await fetch_done_data(proc_inst_id)
-    
-    # 사용자 및 폼 정보 조회 → participants 선조회 후 agent_info 사용
+    # 사용자 및 폼 정보 조회
     participants = await fetch_participants_info(row.get('user_id', ''))
-    
-    # 작업 타입에 따른 요약 처리 (에이전트 모델 정보 전달)
-    agent_info = participants.get('agent_info', [])
-    if row.get('task_type') == 'FB_REQUESTED':
-        current_feedback = row.get('feedback')
-        current_content = row.get('draft') or row.get('output')
-        output_summary, feedback_summary = await summarize_async(all_outputs, current_feedback, current_content, agent_info)
-    else:
-        output_summary, feedback_summary = await summarize_async(all_outputs, None, None, agent_info)
     
     # 폼 정보 조회
     proc_form_id, form_types, form_html = await fetch_form_types(
@@ -103,8 +89,8 @@ async def _prepare_task_inputs(row: Dict) -> Dict:
         "todo_id": todo_id,
         "proc_inst_id": proc_inst_id,
         "topic": row.get('activity_name', ''),
-        "previous_outputs": output_summary,  # 이전 결과물 요약 (별도 관리)
-        "previous_feedback": feedback_summary,  # 피드백 요약 (별도 관리)
+        "query": row.get('query', ''),  # query 필드값을 각 크루에 전달
+        "feedback": row.get('feedback', ''),  # feedback 컬럼값이 있으면 그대로 전달
         "user_info": participants.get('user_info', []),
         "agent_info": participants.get('agent_info', []),
         "form_types": form_types,
